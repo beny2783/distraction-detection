@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Nudge - Insights</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      color: #333;
+      background-color: #f9f9f9;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #6e8efb, #a777e3);
+      color: white;
+      padding: 30px 0;
+      text-align: center;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 500;
+    }
+    
+    .header p {
+      margin: 10px 0 0;
+      font-size: 16px;
+      opacity: 0.9;
+    }
+    
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 30px;
+    }
+    
+    .section {
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .section-title {
+      font-size: 20px;
+      font-weight: 500;
+      margin-bottom: 20px;
+      color: #555;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 20px;
+    }
+    
+    .stat-card {
+      background-color: #f5f7ff;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 32px;
+      font-weight: 500;
+      color: #6e8efb;
+      margin-bottom: 5px;
+    }
+    
+    .stat-label {
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .chart-container {
+      height: 300px;
+      margin-top: 20px;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    
+    th {
+      background-color: #f5f7ff;
+      font-weight: 500;
+      color: #555;
+    }
+    
+    tr:hover {
+      background-color: #f9f9f9;
+    }
+    
+    .progress-bar {
+      height: 8px;
+      background-color: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background-color: #6e8efb;
+    }
+    
+    .date-range {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .date-range select {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: white;
+      font-size: 14px;
+    }
+    
+    .model-info {
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .model-info span {
+      font-weight: 500;
+      color: #6e8efb;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 40px 0;
+      color: #999;
+    }
+    
+    .empty-state p {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    
+    .footer {
+      text-align: center;
+      padding: 20px;
+      color: #999;
+      font-size: 14px;
+    }
+    
+    .feature-importance {
+      margin-top: 20px;
+    }
+    
+    .feature-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    
+    .feature-name {
+      width: 150px;
+      font-size: 14px;
+    }
+    
+    .feature-bar {
+      flex-grow: 1;
+      height: 8px;
+      background-color: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 0 10px;
+    }
+    
+    .feature-bar-fill {
+      height: 100%;
+      background-color: #6e8efb;
+    }
+    
+    .feature-value {
+      width: 50px;
+      font-size: 14px;
+      text-align: right;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Focus Nudge Insights</h1>
+    <p>Understand your browsing patterns and improve focus</p>
+  </div>
+  
+  <div class="container">
+    <div class="date-range">
+      <div class="model-info">
+        Detection model: <span id="model-type">Random Forest</span> v<span id="model-version">0.1.0</span>
+      </div>
+      <select id="time-range">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
+      </select>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Overview</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="total-browsing-time">0h 0m</div>
+          <div class="stat-label">Total Browsing Time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="distraction-count">0</div>
+          <div class="stat-label">Distractions Detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="nudge-count">0</div>
+          <div class="stat-label">Nudges Shown</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="focus-score">0%</div>
+          <div class="stat-label">Focus Score</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Distraction Sources</div>
+      <div id="distraction-chart" class="chart-container">
+        <!-- Chart will be rendered here -->
+        <div class="empty-state">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 21H4.6C3.1 21 2 19.9 2 18.4V3" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 7L16 12L13 9L9 13L7 11" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p>Not enough data to display chart</p>
+        </div>
+      </div>
+      
+      <table id="distraction-table">
+        <thead>
+          <tr>
+            <th>Website</th>
+            <th>Distraction Score</th>
+            <th>Time Spent</th>
+            <th>Visits</th>
+          </tr>
+        </thead>
+        <tbody id="distraction-table-body">
+          <!-- Table data will be populated here -->
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Model Information</div>
+      <p>The current detection model uses the following features to determine distraction levels:</p>
+      
+      <div class="feature-importance" id="feature-importance">
+        <!-- Feature importance will be populated here -->
+        <div class="feature-item">
+          <div class="feature-name">Time Spent</div>
+          <div class="feature-bar">
+            <div class="feature-bar-fill" style="width: 30%"></div>
+          </div>
+          <div class="feature-value">30%</div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-name">Scroll Count</div>
+          <div class="feature-bar">
+            <div class="feature-bar-fill" style="width: 20%"></div>
+          </div>
+          <div class="feature-value">20%</div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-name">Scroll Depth</div>
+          <div class="feature-bar">
+            <div class="feature-bar-fill" style="width: 15%"></div>
+          </div>
+          <div class="feature-value">15%</div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-name">Click Count</div>
+          <div class="feature-bar">
+            <div class="feature-bar-fill" style="width: 10%"></div>
+          </div>
+          <div class="feature-value">10%</div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-name">Tab Switches</div>
+          <div class="feature-bar">
+            <div class="feature-bar-fill" style="width: 15%"></div>
+          </div>
+          <div class="feature-value">15%</div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-name">Video Watch Time</div>
+          <div class="feature-bar">
+            <div class="feature-bar-fill" style="width: 10%"></div>
+          </div>
+          <div class="feature-value">10%</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Nudge Effectiveness</div>
+      <div id="nudge-chart" class="chart-container">
+        <!-- Chart will be rendered here -->
+        <div class="empty-state">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 22C17.5 22 22 17.5 22 12C22 6.5 17.5 2 12 2C6.5 2 2 6.5 2 12C2 17.5 6.5 22 12 22Z" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10"/>
+            <path d="M12 16V17" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round"/>
+            <path d="M12 7V14" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round"/>
+          </svg>
+          <p>Not enough feedback data collected yet</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    <p>Focus Nudge v0.1.0 | Data is stored locally on your device</p>
+  </div>
+  
+  <script src="insights.js"></script>
+</body>
+</html> 

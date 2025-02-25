@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Nudge</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      width: 320px;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #6e8efb, #a777e3);
+      color: white;
+      padding: 15px;
+      text-align: center;
+      border-radius: 0 0 10px 10px;
+      margin-bottom: 15px;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 500;
+    }
+    
+    .header p {
+      margin: 5px 0 0;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    
+    .container {
+      padding: 0 15px 15px;
+    }
+    
+    .section {
+      margin-bottom: 20px;
+    }
+    
+    .section-title {
+      font-size: 16px;
+      font-weight: 500;
+      margin-bottom: 10px;
+      color: #555;
+    }
+    
+    .toggle-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    
+    .toggle-label {
+      font-size: 14px;
+    }
+    
+    .toggle {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+    
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 24px;
+    }
+    
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    
+    input:checked + .slider {
+      background-color: #6e8efb;
+    }
+    
+    input:focus + .slider {
+      box-shadow: 0 0 1px #6e8efb;
+    }
+    
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+    
+    .radio-group {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    
+    .radio-option {
+      flex: 1;
+      text-align: center;
+    }
+    
+    .radio-option label {
+      display: block;
+      padding: 8px;
+      background-color: #f5f5f5;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .radio-option input[type="radio"] {
+      display: none;
+    }
+    
+    .radio-option input[type="radio"]:checked + label {
+      background-color: #6e8efb;
+      color: white;
+    }
+    
+    .radio-option:not(:last-child) {
+      margin-right: 8px;
+    }
+    
+    .input-group {
+      margin-bottom: 10px;
+    }
+    
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
+    
+    .input-group input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    
+    .select-group {
+      margin-bottom: 10px;
+    }
+    
+    .select-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
+    
+    .select-group select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      background-color: white;
+      box-sizing: border-box;
+    }
+    
+    .stats {
+      background-color: #f9f9f9;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    
+    .stat-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .stat-value {
+      font-weight: 500;
+    }
+    
+    .button {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      background-color: #6e8efb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .button:hover {
+      background-color: #5d7ce0;
+    }
+    
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 15px;
+    }
+    
+    .model-info {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Focus Nudge</h1>
+    <p>Stay on track with gentle reminders</p>
+  </div>
+  
+  <div class="container">
+    <div class="section">
+      <div class="section-title">Settings</div>
+      
+      <div class="toggle-container">
+        <span class="toggle-label">Enable Nudging</span>
+        <label class="toggle">
+          <input type="checkbox" id="nudging-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      
+      <div class="input-group">
+        <label for="focus-goal">What's your focus goal today?</label>
+        <input type="text" id="focus-goal" placeholder="e.g., Complete project report">
+      </div>
+      
+      <div class="radio-group">
+        <div class="radio-option">
+          <input type="radio" name="sensitivity" id="sensitivity-low" value="low">
+          <label for="sensitivity-low">Low</label>
+        </div>
+        <div class="radio-option">
+          <input type="radio" name="sensitivity" id="sensitivity-medium" value="medium" checked>
+          <label for="sensitivity-medium">Medium</label>
+        </div>
+        <div class="radio-option">
+          <input type="radio" name="sensitivity" id="sensitivity-high" value="high">
+          <label for="sensitivity-high">High</label>
+        </div>
+      </div>
+      
+      <div class="select-group">
+        <label for="model-type">Detection Model</label>
+        <select id="model-type">
+          <option value="rule-based">Rule-based</option>
+          <option value="random-forest" selected>Random Forest</option>
+        </select>
+        <div class="model-info" id="model-info">Random Forest v0.1.0</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Today's Stats</div>
+      <div class="stats">
+        <div class="stat-item">
+          <span>Distractions detected:</span>
+          <span class="stat-value" id="distraction-count">0</span>
+        </div>
+        <div class="stat-item">
+          <span>Nudges shown:</span>
+          <span class="stat-value" id="nudge-count">0</span>
+        </div>
+        <div class="stat-item">
+          <span>Top distraction:</span>
+          <span class="stat-value" id="top-distraction">None</span>
+        </div>
+      </div>
+    </div>
+    
+    <button class="button" id="view-insights">View Detailed Insights</button>
+    
+    <div class="footer">
+      <p>Focus Nudge v0.1.0</p>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html> 
