@@ -1,0 +1,57 @@
+[
+  {
+    "treeIndex": 0,
+    "feature_names": [
+      "timeSpent",
+      "scrollCount",
+      "scrollDepth",
+      "clickCount",
+      "tabSwitches",
+      "videoWatchTime"
+    ]
+  },
+  {
+    "treeIndex": 1,
+    "feature_names": [
+      "timeSpent",
+      "scrollCount",
+      "scrollDepth",
+      "clickCount",
+      "tabSwitches",
+      "videoWatchTime"
+    ]
+  },
+  {
+    "treeIndex": 2,
+    "feature_names": [
+      "timeSpent",
+      "scrollCount",
+      "scrollDepth",
+      "clickCount",
+      "tabSwitches",
+      "videoWatchTime"
+    ]
+  },
+  {
+    "treeIndex": 3,
+    "feature_names": [
+      "timeSpent",
+      "scrollCount",
+      "scrollDepth",
+      "clickCount",
+      "tabSwitches",
+      "videoWatchTime"
+    ]
+  },
+  {
+    "treeIndex": 4,
+    "feature_names": [
+      "timeSpent",
+      "scrollCount",
+      "scrollDepth",
+      "clickCount",
+      "tabSwitches",
+      "videoWatchTime"
+    ]
+  }
+]

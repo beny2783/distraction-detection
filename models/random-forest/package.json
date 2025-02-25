@@ -1,0 +1,16 @@
+{
+  "name": "distraction-detection-model",
+  "version": "0.2.0",
+  "description": "Random Forest model for distraction detection",
+  "scripts": {
+    "train": "python train_model.py",
+    "install-deps": "pip install -r requirements.txt"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.14.0"
+  },
+  "devDependencies": {
+    "webpack": "^5.76.0",
+    "webpack-cli": "^5.0.1"
+  }
+} 
