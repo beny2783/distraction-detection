@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Nudge - Event Streaming Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #333;
+    }
+    .test-container {
+      border: 1px solid #ccc;
+      padding: 20px;
+      margin-top: 20px;
+      border-radius: 5px;
+    }
+    .log-container {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      margin-top: 20px;
+      height: 400px;
+      overflow-y: auto;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+    .log-entry {
+      margin: 5px 0;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 5px;
+    }
+    .log-entry.info {
+      color: #333;
+    }
+    .log-entry.error {
+      color: #d9534f;
+    }
+    .log-entry.success {
+      color: #5cb85c;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover {
+      background-color: #0069d9;
+    }
+  </style>
+</head>
+<body>
+  <h1>Focus Nudge - Event Streaming Test</h1>
+  
+  <div class="test-container">
+    <h2>Test Controls</h2>
+    <button id="run-tests">Run All Tests</button>
+    <button id="clear-log">Clear Log</button>
+  </div>
+  
+  <div class="log-container" id="log-container">
+    <div class="log-entry info">Test log will appear here...</div>
+  </div>
+  
+  <script>
+    // Override console.log to display in our log container
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    
+    console.log = function() {
+      // Call original console.log
+      originalConsoleLog.apply(console, arguments);
+      
+      // Add to our log container
+      const logContainer = document.getElementById('log-container');
+      const logEntry = document.createElement('div');
+      logEntry.className = 'log-entry info';
+      logEntry.textContent = Array.from(arguments).join(' ');
+      logContainer.appendChild(logEntry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    };
+    
+    console.error = function() {
+      // Call original console.error
+      originalConsoleError.apply(console, arguments);
+      
+      // Add to our log container
+      const logContainer = document.getElementById('log-container');
+      const logEntry = document.createElement('div');
+      logEntry.className = 'log-entry error';
+      logEntry.textContent = Array.from(arguments).join(' ');
+      logContainer.appendChild(logEntry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    };
+    
+    // Set up button handlers
+    document.getElementById('run-tests').addEventListener('click', () => {
+      // Clear log first
+      document.getElementById('log-container').innerHTML = '';
+      
+      // Load and run the test script
+      const script = document.createElement('script');
+      script.src = 'test-events.js';
+      document.body.appendChild(script);
+    });
+    
+    document.getElementById('clear-log').addEventListener('click', () => {
+      document.getElementById('log-container').innerHTML = '';
+    });
+  </script>
+</body>
+</html> 

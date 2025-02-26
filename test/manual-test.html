@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Nudge - Manual Test Page</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+    .test-section {
+      margin: 30px 0;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 10px 5px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .scroll-area {
+      height: 300px;
+      overflow-y: scroll;
+      border: 1px solid #ccc;
+      padding: 10px;
+      margin: 20px 0;
+    }
+    .video-container {
+      margin: 20px 0;
+    }
+    video {
+      max-width: 100%;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 12px 20px;
+      margin: 8px 0;
+      display: inline-block;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h1>Focus Nudge - Manual Test Page</h1>
+  
+  <p>This page is designed to test the Focus Nudge extension's event tracking capabilities. Interact with the elements below to generate different types of events.</p>
+  
+  <div class="test-section">
+    <h2>Mouse Interaction Tests</h2>
+    <p>Click the buttons below to generate mouse click events:</p>
+    <button id="btn1">Click Me</button>
+    <button id="btn2">Click Me Too</button>
+    <a href="#" id="test-link">Test Link</a>
+  </div>
+  
+  <div class="test-section">
+    <h2>Scroll Tests</h2>
+    <p>Scroll in the area below to generate scroll events:</p>
+    <div class="scroll-area" id="scroll-area">
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.</p>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.</p>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.</p>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.</p>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.</p>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.</p>
+    </div>
+  </div>
+  
+  <div class="test-section">
+    <h2>Keyboard Tests</h2>
+    <p>Type in the fields below to generate keyboard events:</p>
+    <input type="text" id="text-input" placeholder="Type something here...">
+    <textarea id="textarea" placeholder="Type something longer here..."></textarea>
+  </div>
+  
+  <div class="test-section">
+    <h2>Video Tests</h2>
+    <p>Play the video below to generate video events:</p>
+    <div class="video-container">
+      <video id="test-video" controls>
+        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+      </video>
+    </div>
+  </div>
+  
+  <div class="test-section">
+    <h2>Copy/Paste Tests</h2>
+    <p>Select the text below and use Ctrl+C to copy, then Ctrl+V to paste in the textarea:</p>
+    <p id="copy-text">This is some text that you can copy and paste to test the copy and paste events.</p>
+  </div>
+  
+  <script>
+    // Add some console logs to verify the page is loaded
+    console.log('Manual test page loaded');
+    
+    // Log when buttons are clicked
+    document.getElementById('btn1').addEventListener('click', () => {
+      console.log('Button 1 clicked');
+    });
+    
+    document.getElementById('btn2').addEventListener('click', () => {
+      console.log('Button 2 clicked');
+    });
+    
+    document.getElementById('test-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('Test link clicked');
+    });
+    
+    // Log when scrolling occurs
+    document.getElementById('scroll-area').addEventListener('scroll', () => {
+      console.log('Scroll area scrolled');
+    });
+    
+    // Log when typing occurs
+    document.getElementById('text-input').addEventListener('input', () => {
+      console.log('Text input changed');
+    });
+    
+    document.getElementById('textarea').addEventListener('input', () => {
+      console.log('Textarea changed');
+    });
+    
+    // Log video events
+    const video = document.getElementById('test-video');
+    video.addEventListener('play', () => {
+      console.log('Video play event');
+    });
+    
+    video.addEventListener('pause', () => {
+      console.log('Video pause event');
+    });
+    
+    video.addEventListener('timeupdate', () => {
+      // Throttle logging to avoid console spam
+      if (Math.floor(video.currentTime) % 5 === 0 && video.currentTime > 0) {
+        console.log(`Video timeupdate event: ${Math.floor(video.currentTime)}s`);
+      }
+    });
+  </script>
+</body>
+</html> 

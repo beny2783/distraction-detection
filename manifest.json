@@ -20,16 +20,21 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "type": "module"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": [
-        "lib/onnx-runtime.js",
-        "models/random-forest/model.js",
-        "models/model-manager.js",
-        "models/random-forest-model.js"
+        "src/events/*.js",
+        "src/features/*.js",
+        "src/analytics/*.js",
+        "src/ui/*.js",
+        "src/ui/*.css",
+        "models/**/*.js",
+        "models/**/*.json",
+        "content.js"
       ],
       "matches": ["<all_urls>"]
     }

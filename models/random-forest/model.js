@@ -2,18 +2,11 @@
  * Random Forest Model for Distraction Detection
  * 
  * This module implements a Random Forest model for distraction detection.
- * It supports both a simplified JavaScript implementation and ONNX model inference.
+ * It uses a simplified JavaScript implementation for service worker compatibility.
  */
 
-// Import ONNX Runtime Web (this would be added to your project dependencies)
-let ort;
-try {
-  // Try to import onnxruntime-web if available
-  ort = require('onnxruntime-web');
-} catch (e) {
-  // ONNX Runtime Web is not available, will fall back to JavaScript implementation
-  console.warn('ONNX Runtime Web not available, will use JavaScript implementation');
-}
+// ONNX Runtime is not supported in service workers, so we'll use only the JS implementation
+const ort = null;
 
 // Feature names and their importance (based on actual model training)
 const FEATURES = [
@@ -76,7 +69,7 @@ const DOMAIN_ADJUSTMENTS = {
 /**
  * Random Forest Model class
  */
-class RandomForestModel {
+export default class RandomForestModel {
   constructor() {
     this.version = '0.2.0';
     this.isLoaded = false;
@@ -86,7 +79,7 @@ class RandomForestModel {
       return acc;
     }, {});
     
-    // ONNX model properties
+    // ONNX is disabled in service workers
     this.useOnnx = false;
     this.onnxSession = null;
     this.onnxModel = null;
@@ -94,31 +87,15 @@ class RandomForestModel {
 
   /**
    * Load the model
-   * @param {Object} options - Model loading options
-   * @param {boolean} options.useOnnx - Whether to use ONNX model (if available)
    * @returns {Promise<boolean>}
    */
-  async load(options = { useOnnx: false }) {
+  async load() {
     try {
-      console.log('Loading Random Forest model');
+      console.log('Loading Random Forest model (JavaScript implementation)');
       
-      this.useOnnx = options.useOnnx;
-      
-      if (this.useOnnx) {
-        // Try to load ONNX model
-        try {
-          await this._loadOnnxModel();
-          console.log('ONNX Random Forest model loaded successfully');
-        } catch (onnxError) {
-          console.warn('Failed to load ONNX model, falling back to JavaScript implementation:', onnxError);
-          this.useOnnx = false;
-          this.trees = this._createDecisionTrees();
-        }
-      } else {
-        // Use JavaScript implementation
-        this.trees = this._createDecisionTrees();
-        console.log('JavaScript Random Forest model loaded successfully');
-      }
+      // Always use JavaScript implementation in service workers
+      this.useOnnx = false;
+      this.trees = this._createDecisionTrees();
       
       this.isLoaded = true;
       return true;
@@ -248,113 +225,20 @@ class RandomForestModel {
   }
 
   /**
-   * Load ONNX model
-   * @returns {Promise<void>}
+   * Load ONNX model - disabled in service workers
    * @private
    */
   async _loadOnnxModel() {
-    // This implementation requires onnxruntime-web to be added as a dependency
-    try {
-      // Check if onnxruntime-web is available
-      if (typeof ort === 'undefined') {
-        console.warn('ONNX Runtime Web is not available. Please add it as a dependency.');
-        throw new Error('ONNX Runtime Web not available');
-      }
-      
-      // Fetch the model
-      const modelPath = chrome.runtime.getURL('models/onnx/random_forest_model.onnx');
-      console.log('Loading ONNX model from:', modelPath);
-      
-      try {
-        const modelResponse = await fetch(modelPath);
-        if (!modelResponse.ok) {
-          throw new Error(`Failed to fetch model: ${modelResponse.status} ${modelResponse.statusText}`);
-        }
-        
-        const modelArrayBuffer = await modelResponse.arrayBuffer();
-        
-        // Create ONNX session
-        const sessionOptions = {};
-        this.onnxSession = await ort.InferenceSession.create(modelArrayBuffer, sessionOptions);
-        
-        console.log('ONNX model loaded successfully');
-        return true;
-      } catch (fetchError) {
-        console.error('Failed to fetch ONNX model:', fetchError);
-        throw fetchError;
-      }
-    } catch (error) {
-      console.error('Failed to load ONNX model:', error);
-      throw error;
-    }
+    console.warn('ONNX models are not supported in service workers');
+    throw new Error('ONNX not supported in service workers');
   }
 
   /**
-   * Predict using ONNX model
-   * @param {Object} features - Feature values
-   * @returns {Object} Prediction result
+   * Predict using ONNX model - disabled in service workers
    * @private
    */
   _predictOnnx(features) {
-    // This implementation requires onnxruntime-web to be added as a dependency
-    try {
-      // Check if ONNX session is available
-      if (!this.onnxSession) {
-        throw new Error('ONNX session not initialized');
-      }
-      
-      // Prepare input data - ensure correct order matching the model training
-      const featureNames = ['timeSpent', 'scrollCount', 'scrollDepth', 'clickCount', 'tabSwitches', 'videoWatchTime'];
-      const inputData = featureNames.map(name => {
-        // Convert milliseconds to seconds for timeSpent if needed
-        if (name === 'timeSpent' && features[name] > 1000) {
-          return features[name] / 1000;
-        }
-        return features[name] || 0;
-      });
-      
-      // Create input tensor
-      const inputTensor = new ort.Tensor('float32', new Float32Array(inputData), [1, inputData.length]);
-      
-      // Run inference
-      const feeds = { float_input: inputTensor };
-      const outputMap = this.onnxSession.run(feeds);
-      
-      // Get output - the exact output tensor name might vary based on the ONNX model
-      const outputTensor = outputMap[Object.keys(outputMap)[0]];
-      const outputData = outputTensor.data;
-      
-      // Process output (assuming binary classification with probability)
-      // For Random Forest, the output is typically the probability of each class
-      // We want the probability of class 1 (distracted)
-      let probability;
-      if (outputData.length === 1) {
-        // If output is a single value (regression or probability)
-        probability = outputData[0];
-      } else if (outputData.length === 2) {
-        // If output is [prob_class_0, prob_class_1]
-        probability = outputData[1];
-      } else {
-        // If output is class index, convert to probability
-        probability = outputData[0] > 0 ? 1.0 : 0.0;
-      }
-      
-      return {
-        probability,
-        confidence: 0.9 // Confidence is typically high for Random Forest
-      };
-    } catch (error) {
-      console.error('ONNX prediction error:', error);
-      // Fall back to JavaScript implementation
-      const predictions = this.trees.map(tree => this._predictTree(tree, features));
-      const probability = predictions.reduce((sum, pred) => sum + pred, 0) / predictions.length;
-      const variance = predictions.reduce((sum, pred) => sum + Math.pow(pred - probability, 2), 0) / predictions.length;
-      const confidence = 1 - Math.sqrt(variance);
-      
-      return { probability, confidence };
-    }
+    console.warn('ONNX prediction is not supported in service workers');
+    return { probability: 0.5, confidence: 0.5 };
   }
-}
-
-// Export the model
-export default RandomForestModel; 
+} 

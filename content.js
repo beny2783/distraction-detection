@@ -2,812 +2,579 @@
  * Focus Nudge - Content Script
  * 
  * This script is injected into web pages to track user interactions
- * and detect potential distractions.
+ * and detect potential distractions using the event streaming architecture.
  */
+
+// Define variables to hold our functions
+let initEventStream, trackEvent, flushEvents, cleanup, EVENT_TYPES;
 
 // Configuration
 const CONFIG = {
-  eventBufferSize: 100,         // Number of events to buffer before sending
-  eventBufferTimeWindow: 5 * 60 * 1000, // 5 minutes in milliseconds
+  contentSampleLength: 1000,    // Length of page content to sample
   scrollSampleRate: 250,        // Capture scroll events every 250ms
   mouseSampleRate: 500,         // Capture mouse position every 500ms
-  classificationInterval: 30000 // Run classification every 30 seconds
+  idleThreshold: 60000,         // 1 minute of inactivity is considered idle
+  periodicFlushInterval: 30000, // Flush events every 30 seconds
+  debugMode: true               // Enable debug logging
 };
 
-// Event buffer to store user interactions
-let eventBuffer = [];
+// State
 let lastScrollTime = 0;
 let lastMouseMoveTime = 0;
+let lastActivityTime = Date.now();
 let pageLoadTime = Date.now();
-let lastClassificationTime = Date.now();
+let isIdle = false;
+let periodicTasksInterval = null;
+let isInitialized = false;
+let pageMetadata = null;
 
-// Initialize IndexedDB
-let db;
-const initDatabase = () => {
-  const request = indexedDB.open('FocusNudgeDB', 1);
+/**
+ * Load the event stream functionality
+ */
+function loadEventStream() {
+  console.log('[Focus Nudge] Loading event stream functionality...');
   
-  request.onupgradeneeded = (event) => {
-    db = event.target.result;
-    if (!db.objectStoreNames.contains('events')) {
-      const eventStore = db.createObjectStore('events', { autoIncrement: true });
-      eventStore.createIndex('timestamp', 'timestamp', { unique: false });
+  // We'll use message passing to communicate with the background script
+  chrome.runtime.sendMessage({ type: 'GET_EVENT_STREAM_FUNCTIONS' }, response => {
+    if (chrome.runtime.lastError) {
+      console.error('[Focus Nudge] Error loading event stream:', chrome.runtime.lastError);
+      // Try again after a delay
+      console.log('[Focus Nudge] Retrying in 1 second...');
+      setTimeout(loadEventStream, 1000);
+      return;
     }
+
+    if (!response || !response.success) {
+      console.error('[Focus Nudge] Failed to get event stream functions:', response?.error || 'Unknown error');
+      return;
+    }
+
+    console.log('[Focus Nudge] Event stream functions loaded successfully');
     
-    if (!db.objectStoreNames.contains('sessions')) {
-      const sessionStore = db.createObjectStore('sessions', { keyPath: 'id' });
-      sessionStore.createIndex('timestamp', 'timestamp', { unique: false });
-    }
-  };
-  
-  request.onsuccess = (event) => {
-    db = event.target.result;
-    console.log('FocusNudge: Database initialized');
-  };
-  
-  request.onerror = (event) => {
-    console.error('FocusNudge: Database error:', event.target.error);
-  };
-};
-
-// Store events in IndexedDB
-const storeEvents = (events) => {
-  if (!db) return;
-  
-  const transaction = db.transaction(['events'], 'readwrite');
-  const store = transaction.objectStore('events');
-  
-  events.forEach(event => {
-    store.add(event);
+    // Initialize the content script now that we have the functions
+    initialize();
   });
-};
+}
 
-// Capture page metadata
-const capturePageMetadata = () => {
-  return {
-    type: 'page_metadata',
+/**
+ * Initialize the content script
+ */
+async function initialize() {
+  if (isInitialized) return;
+  
+  console.log('[Focus Nudge] Initializing content script...');
+  
+  try {
+    // Capture initial page metadata
+    console.log('[Focus Nudge] Capturing page metadata...');
+    pageMetadata = capturePageMetadata();
+    
+    // Track page visit event
+    console.log('[Focus Nudge] Tracking page visit event...');
+    sendEvent('PAGE_VISIT', {
+      page_title: pageMetadata.title,
+      domain: pageMetadata.domain,
+      referrer: document.referrer,
+      page_text: pageMetadata.pageContent,
+      tab_count: 0, // Will be filled in by background script
+      window_width: window.innerWidth,
+      window_height: window.innerHeight,
+      is_active_tab: !document.hidden
+    });
+    
+    // Track content load
+    console.log('[Focus Nudge] Tracking content load...');
+    trackContentLoad();
+    
+    // Set up event listeners
+    console.log('[Focus Nudge] Setting up event listeners...');
+    setupEventListeners();
+    
+    // Set up periodic tasks
+    console.log('[Focus Nudge] Setting up periodic tasks...');
+    setupPeriodicTasks();
+    
+    isInitialized = true;
+    
+    console.log('[Focus Nudge] Content script initialized successfully');
+  } catch (error) {
+    console.error('[Focus Nudge] Error initializing content script:', error);
+  }
+}
+
+/**
+ * Send an event to the background script
+ */
+function sendEvent(eventType, payload = {}) {
+  console.log(`[Focus Nudge] Sending event: ${eventType}`, payload);
+  
+  chrome.runtime.sendMessage({
+    type: 'TRACK_EVENT',
+    eventType,
+    payload,
     url: window.location.href,
-    title: document.title,
-    domain: window.location.hostname,
-    timestamp: Date.now(),
-    pageContent: document.body.innerText.substring(0, 1000), // First 1000 chars for content analysis
-    pageLoadTime: pageLoadTime
-  };
-};
+    timestamp: Date.now()
+  }, response => {
+    if (response && response.success) {
+      console.log(`[Focus Nudge] Event ${eventType} sent successfully`);
+    } else {
+      console.error(`[Focus Nudge] Failed to send event ${eventType}:`, response?.error || 'Unknown error');
+    }
+  });
+}
 
-// Track scroll events
-const trackScroll = () => {
+// Start loading the event stream
+loadEventStream();
+
+/**
+ * Set up event listeners for user interactions
+ */
+function setupEventListeners() {
+  // Scroll events
+  window.addEventListener('scroll', handleScroll, { passive: true });
+  
+  // Mouse events
+  window.addEventListener('mousemove', handleMouseMove, { passive: true });
+  window.addEventListener('click', handleMouseClick);
+  
+  // Keyboard events
+  document.addEventListener('keydown', handleKeyPress);
+  
+  // Copy/paste events
+  document.addEventListener('copy', () => sendEvent('COPY'));
+  document.addEventListener('paste', () => sendEvent('PASTE'));
+  
+  // Tab visibility changes
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  
+  // Video interactions
+  trackVideoElements();
+  
+  // Track DOM mutations to detect new videos
+  const observer = new MutationObserver(() => {
+    trackVideoElements();
+  });
+  
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+  
+  // Window resize
+  window.addEventListener('resize', () => {
+    sendEvent('PAGE_RESIZE', {
+      window_width: window.innerWidth,
+      window_height: window.innerHeight
+    });
+  });
+  
+  // Before unload
+  window.addEventListener('beforeunload', () => {
+    sendEvent('PAGE_EXIT', {
+      page_title: document.title,
+      time_spent: Date.now() - pageLoadTime
+    });
+    
+    // Flush events synchronously before page unloads
+    chrome.runtime.sendMessage({ type: 'FLUSH_EVENTS' });
+  });
+}
+
+/**
+ * Set up periodic tasks
+ */
+function setupPeriodicTasks() {
+  // Clear any existing interval
+  if (periodicTasksInterval) {
+    clearInterval(periodicTasksInterval);
+  }
+  
+  // Set up new interval
+  periodicTasksInterval = setInterval(() => {
+    // Check for idle state
+    checkIdleState();
+    
+    // Flush events periodically
+    chrome.runtime.sendMessage({ type: 'FLUSH_EVENTS' });
+    
+    // Update content analysis periodically
+    if (!isIdle) {
+      trackContentLoad();
+    }
+  }, CONFIG.periodicFlushInterval);
+  
+  // Return cleanup function
+  return () => {
+    clearInterval(periodicTasksInterval);
+  };
+}
+
+/**
+ * Handle scroll events
+ */
+function handleScroll() {
   const now = Date.now();
+  updateActivityTime();
+  
+  // Throttle scroll events
   if (now - lastScrollTime < CONFIG.scrollSampleRate) return;
   
   lastScrollTime = now;
-  const scrollDepth = window.scrollY / (document.body.scrollHeight - window.innerHeight);
   
-  eventBuffer.push({
-    type: 'scroll',
-    scrollY: window.scrollY,
-    scrollDepth: scrollDepth,
-    timestamp: now,
-    url: window.location.href // Add URL to ensure it's valid
+  // Calculate scroll metrics
+  const scrollY = window.scrollY;
+  const scrollX = window.scrollX;
+  const scrollDepth = Math.min(1, scrollY / (document.body.scrollHeight - window.innerHeight));
+  
+  sendEvent('PAGE_SCROLL', {
+    scroll_position_y: scrollY,
+    scroll_position_x: scrollX,
+    scroll_depth: scrollDepth,
+    scroll_direction: lastScrollY < scrollY ? 'down' : 'up',
+    scroll_speed: Math.abs(scrollY - lastScrollY) / (now - lastScrollTime),
+    viewport_height: window.innerHeight,
+    document_height: document.body.scrollHeight
   });
-};
+  
+  lastScrollY = scrollY;
+}
 
-// Track mouse movements
-const trackMouseMovement = (event) => {
+/**
+ * Handle mouse move events
+ */
+function handleMouseMove(event) {
   const now = Date.now();
+  updateActivityTime();
+  
+  // Throttle mouse move events
   if (now - lastMouseMoveTime < CONFIG.mouseSampleRate) return;
   
   lastMouseMoveTime = now;
-  eventBuffer.push({
-    type: 'mouse_move',
+  
+  sendEvent('MOUSE_MOVE', {
     x: event.clientX,
     y: event.clientY,
-    timestamp: now,
-    url: window.location.href // Add URL to ensure it's valid
+    viewport_width: window.innerWidth,
+    viewport_height: window.innerHeight
   });
-};
-
-// Track mouse clicks
-const trackMouseClick = (event) => {
-  eventBuffer.push({
-    type: 'mouse_click',
-    x: event.clientX,
-    y: event.clientY,
-    target: event.target.tagName,
-    timestamp: Date.now(),
-    url: window.location.href // Add URL to ensure it's valid
-  });
-};
-
-// Track video interactions
-const trackVideoInteractions = () => {
-  const videos = document.querySelectorAll('video');
-  videos.forEach(video => {
-    if (!video.hasEventListeners) {
-      video.addEventListener('play', () => {
-        eventBuffer.push({
-          type: 'video_play',
-          duration: video.duration,
-          currentTime: video.currentTime,
-          timestamp: Date.now(),
-          url: window.location.href // Add URL to ensure it's valid
-        });
-      });
-      
-      video.addEventListener('pause', () => {
-        eventBuffer.push({
-          type: 'video_pause',
-          duration: video.duration,
-          currentTime: video.currentTime,
-          timestamp: Date.now(),
-          url: window.location.href // Add URL to ensure it's valid
-        });
-      });
-      
-      video.addEventListener('timeupdate', () => {
-        // Sample video progress every 5 seconds
-        if (Math.floor(video.currentTime) % 5 === 0) {
-          eventBuffer.push({
-            type: 'video_progress',
-            duration: video.duration,
-            currentTime: video.currentTime,
-            timestamp: Date.now(),
-            url: window.location.href // Add URL to ensure it's valid
-          });
-        }
-      });
-      
-      video.hasEventListeners = true;
-    }
-  });
-};
-
-/**
- * Check if the extension context is valid
- * @returns {boolean} - Whether the extension context is valid
- */
-function isExtensionContextValid() {
-  try {
-    // Try to access chrome.runtime.id, which will throw if context is invalidated
-    return Boolean(chrome.runtime.id);
-  } catch (e) {
-    console.warn('Extension context has been invalidated:', e);
-    return false;
-  }
 }
 
 /**
- * Safely send a message to the background script
- * @param {Object} message - Message to send
- * @returns {Promise<any>} - Response from the background script
+ * Handle mouse click events
  */
-function safelySendMessage(message) {
-  return new Promise((resolve, reject) => {
-    if (!isExtensionContextValid()) {
-      reject(new Error('Extension context invalidated'));
-      return;
-    }
-    
-    try {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-          return;
-        }
-        resolve(response);
-      });
-    } catch (error) {
-      reject(error);
-    }
+function handleMouseClick(event) {
+  updateActivityTime();
+  
+  // Get information about the clicked element
+  const target = event.target;
+  const targetText = target.textContent?.trim().substring(0, 100) || '';
+  const isLink = target.tagName === 'A' || target.closest('a') !== null;
+  const linkElement = isLink ? (target.tagName === 'A' ? target : target.closest('a')) : null;
+  const linkUrl = linkElement?.href || '';
+  
+  sendEvent('MOUSE_CLICK', {
+    x: event.clientX,
+    y: event.clientY,
+    target_element: target.tagName.toLowerCase(),
+    target_text: targetText,
+    is_link: isLink,
+    link_url: linkUrl,
+    button: event.button
   });
 }
 
-// Process the event buffer and send to background script
-const processEventBuffer = () => {
-  if (eventBuffer.length === 0) return;
+/**
+ * Handle key press events
+ */
+function handleKeyPress(event) {
+  updateActivityTime();
   
-  if (!isExtensionContextValid()) {
-    console.warn('Not processing event buffer due to invalidated extension context');
+  // Don't track modifier keys alone
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) {
     return;
   }
   
-  // Add page metadata to each event and ensure URL is valid
-  const metadata = capturePageMetadata();
-  const validEvents = eventBuffer.filter(event => {
-    // Ensure each event has a valid URL
-    if (!event.url || event.url.trim() === '') {
-      event.url = metadata.url;
-    }
-    
-    // Ensure timestamp exists
-    if (!event.timestamp) {
-      event.timestamp = Date.now();
-    }
-    
-    // Validate URL format
-    try {
-      // Basic URL validation
-      return event.url && 
-             event.url.trim() !== '' && 
-             (event.url.startsWith('http://') || event.url.startsWith('https://'));
-    } catch (e) {
-      console.warn('Filtering out event with invalid URL:', event);
-      return false;
-    }
-  });
+  // Get information about the target element
+  const target = event.target;
+  const isInput = ['INPUT', 'TEXTAREA'].includes(target.tagName) || 
+                  target.isContentEditable;
   
-  // Only send if we have valid events
-  if (validEvents.length === 0) {
-    console.warn('No valid events to send after filtering');
-    eventBuffer = []; // Clear buffer since all events were invalid
-    return;
-  }
-  
-  safelySendMessage({
-    type: 'events',
-    events: validEvents
-  }).then(response => {
-    if (response && response.success) {
-      // Clear the buffer after successful processing
-      eventBuffer = [];
-    }
-  }).catch(error => {
-    console.error('Failed to send events:', error);
+  sendEvent('KEY_PRESS', {
+    key: event.key,
+    is_input: isInput,
+    target_element: target.tagName.toLowerCase(),
+    has_modifier: event.ctrlKey || event.altKey || event.shiftKey || event.metaKey
   });
-};
+}
 
-// Send nudge feedback to background script
-const sendNudgeFeedback = (nudgeType, url, helpful) => {
-  if (!isExtensionContextValid()) {
-    console.warn('Not sending nudge feedback due to invalidated extension context');
-    return;
-  }
+/**
+ * Handle visibility change events
+ */
+function handleVisibilityChange() {
+  const isVisible = !document.hidden;
   
-  safelySendMessage({
-    type: 'nudge_feedback',
-    nudgeType,
-    url,
-    helpful
-  }).then(response => {
-    console.log('Nudge feedback sent:', response);
-  }).catch(error => {
-    console.error('Failed to send nudge feedback:', error);
-  });
-};
-
-// Check if the current page is a distraction
-const checkDistraction = () => {
-  const metadata = capturePageMetadata();
-  
-  if (!isExtensionContextValid()) {
-    console.warn('Not checking distraction due to invalidated extension context');
-    return;
-  }
-  
-  safelySendMessage({
-    type: 'classify',
-    url: metadata.url,
-    title: metadata.title
-  }).then(response => {
-    if (!response) return;
-    
-    if (response.isDistracted) {
-      showNudge(response.message, response.nudgeType);
-    }
-  }).catch(error => {
-    console.error('Failed to check distraction:', error);
-  });
-};
-
-// Run classification to check if current page is a distraction
-const runClassification = () => {
-  // Check if extension context is valid
-  if (!isExtensionContextValid()) {
-    console.warn('FocusNudge: Extension context invalidated, cannot run classification');
-    return;
-  }
-  
-  const now = Date.now();
-  // Only run classification every CONFIG.classificationInterval milliseconds
-  if (now - lastClassificationTime < CONFIG.classificationInterval) {
-    return;
-  }
-  
-  lastClassificationTime = now;
-  const metadata = capturePageMetadata();
-  
-  console.log('FocusNudge: Running classification for URL:', metadata.url);
-  
-  safelySendMessage({
-    type: 'classify',
-    url: metadata.url,
-    title: metadata.title
-  }).then(response => {
-    if (!response) return;
-    
-    console.log('FocusNudge: Classification result:', response);
-    
-    if (response && response.isDistracted) {
-      console.log('FocusNudge: Detected distraction, showing nudge');
-      // The background script already sends the nudge in the classify response
-      if (response.nudgeType && response.message) {
-        showNudge({
-          nudgeType: response.nudgeType,
-          message: response.message
-        });
-      }
-    }
-  }).catch(error => {
-    console.error('Failed to check distraction:', error);
-  });
-};
-
-// Show nudge to the user
-const showNudge = (nudgeData) => {
-  // Handle both formats: direct parameters or object
-  const type = typeof nudgeData === 'object' ? nudgeData.nudgeType : nudgeData;
-  const message = typeof nudgeData === 'object' ? nudgeData.message : arguments[1];
-  
-  console.log('FocusNudge: Showing nudge of type:', type, 'with message:', message);
-  
-  // Create nudge element if it doesn't exist
-  let nudgeElement = document.getElementById('focus-nudge-overlay');
-  if (!nudgeElement) {
-    nudgeElement = document.createElement('div');
-    nudgeElement.id = 'focus-nudge-overlay';
-    nudgeElement.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background-color: rgba(255, 255, 255, 0.98);
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-      padding: 20px;
-      z-index: 2147483647; /* Highest possible z-index */
-      font-family: Arial, sans-serif;
-      max-width: 350px;
-      transition: all 0.3s ease-in-out;
-      border-left: 5px solid #4285F4;
-      opacity: 0;
-      transform: translateY(-10px);
-    `;
-    document.body.appendChild(nudgeElement);
-    
-    // Animate in
-    setTimeout(() => {
-      nudgeElement.style.opacity = '1';
-      nudgeElement.style.transform = 'translateY(0)';
-    }, 10);
+  if (isVisible) {
+    updateActivityTime();
+    sendEvent('PAGE_FOCUS', {
+      page_title: document.title,
+      url: window.location.href
+    });
   } else {
-    // Reset opacity and transform for existing element
-    nudgeElement.style.opacity = '1';
-    nudgeElement.style.transform = 'translateY(0)';
-  }
-  
-  // Set border color based on nudge type
-  let borderColor = '#4285F4'; // Default blue
-  let typeIcon = '💡'; // Default icon
-  
-  switch (type) {
-    case 'reminder':
-      borderColor = '#4285F4'; // Blue
-      typeIcon = '⏰';
-      break;
-    case 'reflection':
-      borderColor = '#9C27B0'; // Purple
-      typeIcon = '🤔';
-      break;
-    case 'suggestion':
-      borderColor = '#0F9D58'; // Green
-      typeIcon = '💡';
-      break;
-    case 'stats':
-      borderColor = '#F4B400'; // Yellow
-      typeIcon = '📊';
-      break;
-    case 'test':
-      borderColor = '#DB4437'; // Red
-      typeIcon = '🧪';
-      break;
-  }
-  
-  nudgeElement.style.borderLeft = `5px solid ${borderColor}`;
-  
-  // Set nudge content
-  nudgeElement.innerHTML = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-      <h3 style="margin: 0; color: #333; font-size: 18px; display: flex; align-items: center;">
-        <span style="margin-right: 8px; font-size: 20px;">${typeIcon}</span>
-        Focus Nudge
-      </h3>
-      <button id="focus-nudge-close" style="background: none; border: none; cursor: pointer; font-size: 20px; color: #666; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background 0.2s;">×</button>
-    </div>
-    <p style="margin: 0 0 15px 0; color: #333; font-size: 15px; line-height: 1.4;">${message}</p>
-    <div style="display: flex; justify-content: space-between;">
-      <button id="focus-nudge-helpful" style="background: #0F9D58; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s;">Helpful</button>
-      <button id="focus-nudge-not-helpful" style="background: #DB4437; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s;">Not Helpful</button>
-    </div>
-  `;
-  
-  // Add event listeners with hover effects
-  const closeButton = document.getElementById('focus-nudge-close');
-  closeButton.addEventListener('mouseover', () => {
-    closeButton.style.background = 'rgba(0, 0, 0, 0.1)';
-  });
-  
-  closeButton.addEventListener('mouseout', () => {
-    closeButton.style.background = 'none';
-  });
-  
-  closeButton.addEventListener('click', () => {
-    nudgeElement.style.opacity = '0';
-    nudgeElement.style.transform = 'translateY(-10px)';
-    setTimeout(() => {
-      if (nudgeElement.parentNode) {
-        nudgeElement.remove();
-      }
-    }, 300);
-  });
-  
-  const helpfulButton = document.getElementById('focus-nudge-helpful');
-  helpfulButton.addEventListener('mouseover', () => {
-    helpfulButton.style.background = '#0B8043';
-  });
-  
-  helpfulButton.addEventListener('mouseout', () => {
-    helpfulButton.style.background = '#0F9D58';
-  });
-  
-  helpfulButton.addEventListener('click', () => {
-    sendNudgeFeedback(type, window.location.href, true);
-    
-    // Show thank you message
-    nudgeElement.innerHTML = `
-      <div style="text-align: center; padding: 10px;">
-        <h3 style="margin: 0 0 10px 0; color: #333;">Thanks for your feedback!</h3>
-        <p style="margin: 0; color: #555;">We'll use it to improve your experience.</p>
-      </div>
-    `;
-    
-    setTimeout(() => {
-      nudgeElement.style.opacity = '0';
-      nudgeElement.style.transform = 'translateY(-10px)';
-      setTimeout(() => {
-        if (nudgeElement.parentNode) {
-          nudgeElement.remove();
-        }
-      }, 300);
-    }, 1500);
-  });
-  
-  const notHelpfulButton = document.getElementById('focus-nudge-not-helpful');
-  notHelpfulButton.addEventListener('mouseover', () => {
-    notHelpfulButton.style.background = '#C53929';
-  });
-  
-  notHelpfulButton.addEventListener('mouseout', () => {
-    notHelpfulButton.style.background = '#DB4437';
-  });
-  
-  notHelpfulButton.addEventListener('click', () => {
-    sendNudgeFeedback(type, window.location.href, false);
-    
-    // Show thank you message
-    nudgeElement.innerHTML = `
-      <div style="text-align: center; padding: 10px;">
-        <h3 style="margin: 0 0 10px 0; color: #333;">Thanks for your feedback!</h3>
-        <p style="margin: 0; color: #555;">We'll use it to improve your experience.</p>
-      </div>
-    `;
-    
-    setTimeout(() => {
-      nudgeElement.style.opacity = '0';
-      nudgeElement.style.transform = 'translateY(-10px)';
-      setTimeout(() => {
-        if (nudgeElement.parentNode) {
-          nudgeElement.remove();
-        }
-      }, 300);
-    }, 1500);
-  });
-  
-  // Auto-hide after 15 seconds
-  setTimeout(() => {
-    if (nudgeElement.parentNode) {
-      nudgeElement.style.opacity = '0';
-      nudgeElement.style.transform = 'translateY(-10px)';
-      setTimeout(() => {
-        if (nudgeElement.parentNode) {
-          nudgeElement.remove();
-        }
-      }, 300);
-    }
-  }, 15000);
-};
-
-// Set up periodic tasks with error handling
-const setupPeriodicTasks = () => {
-  let intervalId = null;
-  let reconnectAttempts = 0;
-  const MAX_RECONNECT_ATTEMPTS = 5;
-  const RECONNECT_DELAY = 5000; // 5 seconds
-  
-  // Function to start the periodic tasks
-  const startTasks = () => {
-    if (intervalId) {
-      clearInterval(intervalId); // Clear any existing interval
-    }
-    
-    intervalId = setInterval(() => {
-      try {
-        // Check if extension context is still valid
-        if (!isExtensionContextValid()) {
-          console.warn('FocusNudge: Extension context invalidated, pausing periodic tasks');
-          clearInterval(intervalId);
-          intervalId = null;
-          
-          // Try to reconnect after a delay
-          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            console.log(`FocusNudge: Will attempt to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}) in ${RECONNECT_DELAY/1000} seconds`);
-            
-            setTimeout(() => {
-              console.log('FocusNudge: Attempting to reconnect...');
-              if (isExtensionContextValid()) {
-                console.log('FocusNudge: Reconnection successful, resuming tasks');
-                reconnectAttempts = 0;
-                startTasks();
-              } else if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                // Will try again in the next scheduled attempt
-                console.log('FocusNudge: Reconnection failed, will try again');
-              } else {
-                console.warn('FocusNudge: Maximum reconnection attempts reached, giving up');
-              }
-            }, RECONNECT_DELAY);
-          }
-          return;
-        }
-        
-        trackVideoInteractions();
-        processEventBuffer();
-        runClassification();
-      } catch (error) {
-        console.error('FocusNudge: Error in periodic tasks:', error);
-        
-        // If we encounter a context invalidated error, stop the interval and try to reconnect
-        if (error.message && error.message.includes('Extension context invalidated')) {
-          console.warn('FocusNudge: Extension context invalidated error caught, pausing tasks');
-          clearInterval(intervalId);
-          intervalId = null;
-          
-          // Try to reconnect after a delay (same logic as above)
-          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            setTimeout(() => {
-              if (isExtensionContextValid()) {
-                reconnectAttempts = 0;
-                startTasks();
-              }
-            }, RECONNECT_DELAY);
-          }
-        }
-      }
-    }, 1000);
-    
-    return intervalId;
-  };
-  
-  // Start the tasks initially
-  startTasks();
-  
-  // Return a function that can be used to stop the tasks
-  return () => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
-  };
-};
-
-// Initialize with reconnection support
-const initialize = () => {
-  try {
-    // Check if extension context is valid
-    if (!isExtensionContextValid()) {
-      console.warn('FocusNudge: Extension context invalidated, cannot initialize');
-      
-      // Set up a reconnection attempt
-      const attemptReconnect = () => {
-        console.log('FocusNudge: Attempting to initialize after context invalidation...');
-        if (isExtensionContextValid()) {
-          console.log('FocusNudge: Context is now valid, initializing');
-          initialize();
-        } else {
-          // Try again after a delay
-          setTimeout(attemptReconnect, 5000);
-        }
-      };
-      
-      setTimeout(attemptReconnect, 5000);
-      return;
-    }
-    
-    // Initialize IndexedDB
-    initDatabase();
-    
-    // Capture initial page metadata
-    const metadata = capturePageMetadata();
-    eventBuffer.push(metadata);
-    
-    // Set up event listeners
-    window.addEventListener('scroll', trackScroll, { passive: true });
-    window.addEventListener('mousemove', trackMouseMovement, { passive: true });
-    window.addEventListener('click', trackMouseClick, { passive: true });
-    
-    // Track tab visibility changes
-    document.addEventListener('visibilitychange', () => {
-      if (isExtensionContextValid()) {
-        eventBuffer.push({
-          type: 'visibility_change',
-          visible: !document.hidden,
-          timestamp: Date.now(),
-          url: window.location.href // Add URL to ensure it's valid
-        });
-      }
+    sendEvent('PAGE_BLUR', {
+      page_title: document.title,
+      url: window.location.href,
+      time_spent: Date.now() - pageLoadTime
     });
     
-    // Set up periodic tasks with reconnection support
-    const stopTasks = setupPeriodicTasks();
-    
-    // Store the stop function in case we need to clean up
-    window._focusNudgeStopTasks = stopTasks;
-    
-    console.log('FocusNudge: Content script initialized');
-    
-    // Inject test functions
-    injectTestFunctions();
-  } catch (error) {
-    console.error('FocusNudge: Error initializing content script:', error);
+    // Flush events when tab loses focus
+    chrome.runtime.sendMessage({ type: 'FLUSH_EVENTS' });
   }
-};
-
-// Start tracking when the page is fully loaded
-if (document.readyState === 'complete') {
-  initialize();
-} else {
-  window.addEventListener('load', initialize);
 }
 
-// Listen for messages from the background script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  try {
-    if (!isExtensionContextValid()) {
-      console.warn('Ignoring message due to invalidated extension context');
-      return false;
-    }
-    
-    if (message.type === 'get_page_info') {
-      // Capture page metadata
-      const pageInfo = {
-        url: window.location.href,
-        title: document.title,
-        timestamp: Date.now()
-      };
-      
-      sendResponse(pageInfo);
-      return true;
-    }
-  } catch (error) {
-    console.error('Error handling message:', error);
-  }
+/**
+ * Track video elements on the page
+ */
+function trackVideoElements() {
+  const videos = document.querySelectorAll('video');
   
-  return false;
-});
-
-// Test function that can be called from the console
-window.testFocusNudge = {
-  checkDistraction: () => {
-    console.log('FocusNudge: Manually triggering distraction check');
-    const metadata = capturePageMetadata();
-    safelySendMessage({
-      type: 'classify',
-      url: metadata.url,
-      title: metadata.title
-    }).then(response => {
-      console.log('FocusNudge: Manual classification result:', response);
-      
-      // Show nudge if distracted
-      if (response && response.isDistracted && response.nudgeType && response.message) {
-        showNudge({
-          nudgeType: response.nudgeType,
-          message: response.message
+  videos.forEach(video => {
+    // Skip if we've already attached listeners
+    if (video._focusNudgeTracked) return;
+    
+    // Mark as tracked
+    video._focusNudgeTracked = true;
+    
+    // Get video metadata
+    const videoTitle = getVideoTitle(video);
+    
+    // Play event
+    video.addEventListener('play', () => {
+      updateActivityTime();
+      sendEvent('VIDEO_PLAY', {
+        video_url: video.currentSrc,
+        video_title: videoTitle,
+        video_duration: video.duration,
+        video_current_time: video.currentTime,
+        is_fullscreen: isFullscreen(),
+        player_type: detectPlayerType(video)
+      });
+    });
+    
+    // Pause event
+    video.addEventListener('pause', () => {
+      updateActivityTime();
+      sendEvent('VIDEO_PAUSE', {
+        video_url: video.currentSrc,
+        video_title: videoTitle,
+        video_duration: video.duration,
+        video_current_time: video.currentTime,
+        is_fullscreen: isFullscreen(),
+        player_type: detectPlayerType(video)
+      });
+    });
+    
+    // Progress event
+    video.addEventListener('timeupdate', () => {
+      // Only track progress periodically
+      if (Math.floor(video.currentTime) % 5 === 0 && video.currentTime > 0) {
+        updateActivityTime();
+        sendEvent('VIDEO_PROGRESS', {
+          video_url: video.currentSrc,
+          video_title: videoTitle,
+          video_duration: video.duration,
+          video_current_time: video.currentTime,
+          watch_time: 5, // Approximate, since we sample every 5 seconds
+          is_fullscreen: isFullscreen(),
+          player_type: detectPlayerType(video)
         });
       }
-    }).catch(error => {
-      console.error('Failed to check distraction:', error);
     });
-  },
+  });
+}
+
+/**
+ * Track content load
+ */
+function trackContentLoad() {
+  // Extract page content
+  const content = document.body.innerText.substring(0, CONFIG.contentSampleLength);
   
-  getNudge: () => {
-    console.log('FocusNudge: Manually requesting nudge');
-    const metadata = capturePageMetadata();
-    safelySendMessage({
-      type: 'classify',
-      url: metadata.url,
-      title: metadata.title
-    }).then(response => {
-      console.log('FocusNudge: Manual nudge response:', response);
-      if (response && response.isDistracted && response.nudgeType && response.message) {
-        showNudge({
-          nudgeType: response.nudgeType,
-          message: response.message
-        });
-      }
-    }).catch(error => {
-      console.error('Failed to get nudge:', error);
-    });
-  },
+  // Check for various content types
+  const hasVideo = document.querySelectorAll('video').length > 0;
+  const hasAudio = document.querySelectorAll('audio').length > 0;
+  const hasForms = document.querySelectorAll('form, input, textarea, select').length > 0;
+  const hasComments = document.querySelectorAll('.comments, .comment, #comments, [id*="comment"]').length > 0;
   
-  showTestNudge: () => {
-    console.log('FocusNudge: Showing test nudge');
-    showNudge({
-      nudgeType: 'test',
-      message: 'This is a test nudge from the console!'
+  // Calculate simple readability score (characters per word)
+  const words = content.split(/\s+/).filter(word => word.length > 0);
+  const chars = content.replace(/\s+/g, '').length;
+  const readabilityScore = words.length > 0 ? chars / words.length : 0;
+  
+  sendEvent('CONTENT_LOAD', {
+    content_type: detectContentType(),
+    content_length: content.length,
+    content_summary: content.substring(0, 100),
+    has_video: hasVideo,
+    has_audio: hasAudio,
+    has_forms: hasForms,
+    has_comments: hasComments,
+    readability_score: readabilityScore
+  });
+}
+
+/**
+ * Update the last activity time
+ */
+function updateActivityTime() {
+  lastActivityTime = Date.now();
+  
+  // If we were idle, we're now active
+  if (isIdle) {
+    isIdle = false;
+    sendEvent('SYSTEM_ACTIVE');
+  }
+}
+
+/**
+ * Check if the user is idle
+ */
+function checkIdleState() {
+  const now = Date.now();
+  const idleTime = now - lastActivityTime;
+  
+  // If idle time exceeds threshold and we're not already marked as idle
+  if (idleTime >= CONFIG.idleThreshold && !isIdle) {
+    isIdle = true;
+    sendEvent('SYSTEM_IDLE', {
+      idle_time: idleTime
     });
   }
-}; 
+}
 
-// Function to inject test functions for development
-const injectTestFunctions = () => {
-  try {
-    // Set up event listeners for the test functions
-    document.addEventListener('focusNudge_checkDistraction', () => {
-      safelySendMessage({
-        type: 'classify',
-        url: window.location.href,
-        title: document.title
-      }).then(response => {
-        console.log('Distraction check result:', response);
-      }).catch(error => {
-        console.error('Failed to check distraction:', error);
-      });
-    });
-    
-    document.addEventListener('focusNudge_getNudge', () => {
-      safelySendMessage({
-        type: 'classify',
-        url: window.location.href,
-        title: document.title
-      }).then(response => {
-        console.log('Nudge result:', response);
-      }).catch(error => {
-        console.error('Failed to get nudge:', error);
-      });
-    });
-    
-    document.addEventListener('focusNudge_showTestNudge', () => {
-      showNudge({
-        nudgeType: 'test',
-        message: 'This is a test nudge. Is it working correctly?'
-      });
-    });
-    
-    // Instead of injecting a script, we'll use the existing window.testFocusNudge object
-    // that's already defined in the content script context
-    
-    // Log that test functions are ready
-    console.log('FocusNudge: Test functions are ready. Use window.testFocusNudge in the console to test.');
-    console.log('Available commands:');
-    console.log('- window.testFocusNudge.checkDistraction()');
-    console.log('- window.testFocusNudge.getNudge()');
-    console.log('- window.testFocusNudge.showTestNudge()');
-  } catch (error) {
-    console.error('Failed to set up test functions:', error);
+/**
+ * Clean up the content script
+ */
+function cleanupContentScript() {
+  // Remove event listeners
+  window.removeEventListener('scroll', handleScroll);
+  window.removeEventListener('mousemove', handleMouseMove);
+  window.removeEventListener('click', handleMouseClick);
+  document.removeEventListener('keydown', handleKeyPress);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  
+  // Clear intervals
+  if (periodicTasksInterval) {
+    clearInterval(periodicTasksInterval);
   }
-};
+  
+  // Clean up event stream
+  chrome.runtime.sendMessage({ type: 'CLEANUP_EVENTS' });
+  
+  isInitialized = false;
+}
 
-// Set up the test functions when the page loads
-if (document.readyState === 'complete') {
-  injectTestFunctions();
-} else {
-  window.addEventListener('load', injectTestFunctions);
+// Export cleanup function for testing
+window._focusNudgeCleanup = cleanupContentScript;
+
+// Helper functions (these remain the same)
+function getVideoTitle(video) {
+  // Try to find video title from various sources
+  
+  // 1. Check for YouTube-specific elements
+  if (window.location.hostname.includes('youtube.com')) {
+    const ytTitle = document.querySelector('.title .ytd-video-primary-info-renderer');
+    if (ytTitle) return ytTitle.textContent.trim();
+  }
+  
+  // 2. Check for common video title elements
+  const possibleTitleElements = [
+    // Common video player title elements
+    '.video-title', '.media-title', '.player-title',
+    // Netflix
+    '.video-title', '.title-text',
+    // Vimeo
+    '.vp-title'
+  ];
+  
+  for (const selector of possibleTitleElements) {
+    const element = document.querySelector(selector);
+    if (element) return element.textContent.trim();
+  }
+  
+  // 3. Look for title in parent elements
+  let parent = video.parentElement;
+  while (parent) {
+    const headings = parent.querySelectorAll('h1, h2, h3');
+    if (headings.length > 0) {
+      return headings[0].textContent.trim();
+    }
+    parent = parent.parentElement;
+  }
+  
+  // 4. Fallback to page title
+  return document.title;
+}
+
+function detectPlayerType(video) {
+  const url = window.location.href;
+  
+  if (url.includes('youtube.com')) return 'youtube';
+  if (url.includes('netflix.com')) return 'netflix';
+  if (url.includes('vimeo.com')) return 'vimeo';
+  if (url.includes('twitch.tv')) return 'twitch';
+  
+  // Check for common player classes
+  const parent = video.closest('.video-player, .media-player, .player');
+  if (parent) {
+    const classes = parent.className;
+    if (classes.includes('youtube')) return 'youtube';
+    if (classes.includes('vimeo')) return 'vimeo';
+    if (classes.includes('jwplayer')) return 'jwplayer';
+    if (classes.includes('video-js')) return 'videojs';
+    if (classes.includes('plyr')) return 'plyr';
+  }
+  
+  return 'generic';
+}
+
+function isFullscreen() {
+  return !!(document.fullscreenElement || 
+           document.webkitFullscreenElement || 
+           document.mozFullScreenElement || 
+           document.msFullscreenElement);
+}
+
+function detectContentType() {
+  const url = window.location.href;
+  const title = document.title.toLowerCase();
+  
+  // Check URL patterns
+  if (url.includes('youtube.com/watch')) return 'video';
+  if (url.includes('netflix.com/watch')) return 'video';
+  if (url.includes('/article/') || url.includes('/blog/')) return 'article';
+  if (url.includes('/news/')) return 'news';
+  if (url.includes('/product/') || url.includes('/item/')) return 'product';
+  if (url.includes('/search')) return 'search';
+  
+  // Check page structure
+  if (document.querySelectorAll('article, .article').length > 0) return 'article';
+  if (document.querySelectorAll('video').length > 0) return 'video';
+  if (document.querySelectorAll('.product, .item, [itemtype*="Product"]').length > 0) return 'product';
+  if (document.querySelectorAll('form').length > 0) return 'form';
+  
+  // Check title patterns
+  if (title.includes('login') || title.includes('sign in')) return 'login';
+  if (title.includes('search')) return 'search';
+  
+  return 'generic';
+}
+
+function capturePageMetadata() {
+  return {
+    url: window.location.href,
+    title: document.title,
+    domain: window.location.hostname,
+    pageContent: document.body.innerText.substring(0, CONFIG.contentSampleLength),
+    pageLoadTime: pageLoadTime
+  };
 } 
