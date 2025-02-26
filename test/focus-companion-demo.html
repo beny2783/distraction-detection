@@ -1,0 +1,18 @@
+// ... existing code ...
+            // Set script content
+            script.textContent = `
+              // Override the expressions paths to use absolute paths from server root
+              window.COMPANION_ASSETS_PATH = '/assets/companion/';
+              
+              import '../src/ui/focus-companion.js';
+              window.focusCompanion = focusCompanion;
+              
+              // Fix the paths after import
+              window.focusCompanion.expressions = {
+                idle: window.COMPANION_ASSETS_PATH + 'companion.svg',
+                happy: window.COMPANION_ASSETS_PATH + 'companion-happy.svg',
+                thinking: window.COMPANION_ASSETS_PATH + 'companion-thinking.svg',
+                alert: window.COMPANION_ASSETS_PATH + 'companion-alert.svg'
+              };
+            `;
+// ... existing code ...

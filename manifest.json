@@ -34,7 +34,8 @@
         "src/ui/*.css",
         "models/**/*.js",
         "models/**/*.json",
-        "content.js"
+        "content.js",
+        "assets/companion/*.svg"
       ],
       "matches": ["<all_urls>"]
     }

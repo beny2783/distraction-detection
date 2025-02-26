@@ -94,6 +94,12 @@ async function initialize() {
     console.log('[Focus Nudge] Setting up periodic tasks...');
     setupPeriodicTasks();
     
+    // Load Focus Companion immediately
+    console.log('[Focus Nudge] Loading Focus Companion...');
+    loadFocusCompanion().catch(error => {
+      console.error('[Focus Nudge] Error loading Focus Companion:', error);
+    });
+    
     isInitialized = true;
     
     console.log('[Focus Nudge] Content script initialized successfully');
@@ -125,6 +131,46 @@ function sendEvent(eventType, payload = {}) {
 
 // Start loading the event stream
 loadEventStream();
+
+/**
+ * Check if extension resources are accessible
+ */
+function checkExtensionResources() {
+  console.log('[Focus Nudge] Checking extension resources...');
+  
+  // List of resources to check
+  const resources = [
+    'src/ui/focus-companion.css',
+    'src/ui/focus-companion.js',
+    'assets/companion/companion.svg',
+    'assets/companion/companion-happy.svg',
+    'assets/companion/companion-thinking.svg',
+    'assets/companion/companion-alert.svg'
+  ];
+  
+  // Check each resource
+  resources.forEach(resource => {
+    const url = chrome.runtime.getURL(resource);
+    console.log(`[Focus Nudge] Checking resource: ${resource}`);
+    console.log(`[Focus Nudge] URL: ${url}`);
+    
+    // Try to fetch the resource
+    fetch(url)
+      .then(response => {
+        if (response.ok) {
+          console.log(`[Focus Nudge] Resource accessible: ${resource}`);
+        } else {
+          console.error(`[Focus Nudge] Resource not accessible: ${resource}, status: ${response.status}`);
+        }
+      })
+      .catch(error => {
+        console.error(`[Focus Nudge] Error accessing resource: ${resource}`, error);
+      });
+  });
+}
+
+// Add a call to check extension resources after initialization
+setTimeout(checkExtensionResources, 2000);
 
 /**
  * Set up event listeners for user interactions
@@ -787,6 +833,107 @@ function formatTaskType(taskType) {
 function showTaskDetectionAlert(taskData) {
   console.log('Task detection alert:', taskData);
   
+  // Check if Focus Companion is already loaded
+  if (window.focusCompanion) {
+    // Use the Focus Companion to show the task detection
+    window.focusCompanion.showTaskDetection(taskData);
+    return;
+  }
+  
+  // If Focus Companion is not loaded, load it
+  loadFocusCompanion().then(() => {
+    // Use the Focus Companion to show the task detection
+    window.focusCompanion.showTaskDetection(taskData);
+  }).catch(error => {
+    console.error('[Focus Nudge] Error loading Focus Companion:', error);
+    
+    // Fallback to simple alert if Focus Companion fails to load
+    showSimpleTaskAlert(taskData);
+  });
+}
+
+/**
+ * Load the Focus Companion
+ * @returns {Promise} - A promise that resolves when the Focus Companion is loaded
+ */
+function loadFocusCompanion() {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('[Focus Nudge] Starting to load Focus Companion...');
+      
+      // Check if already loaded
+      if (window.focusCompanion) {
+        console.log('[Focus Nudge] Focus Companion already loaded, reusing existing instance');
+        resolve();
+        return;
+      }
+      
+      // Log the URLs we're trying to load
+      const cssUrl = chrome.runtime.getURL('src/ui/focus-companion.css');
+      const jsUrl = chrome.runtime.getURL('src/ui/focus-companion.js');
+      console.log('[Focus Nudge] Loading CSS from:', cssUrl);
+      console.log('[Focus Nudge] Loading JS from:', jsUrl);
+      
+      // Load CSS
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      link.href = cssUrl;
+      document.head.appendChild(link);
+      console.log('[Focus Nudge] CSS link added to document head');
+      
+      // Create script element
+      const script = document.createElement('script');
+      script.type = 'module';
+      
+      // Set script content
+      script.textContent = `
+        console.log('[Focus Nudge] Importing Focus Companion module...');
+        import focusCompanion from '${jsUrl}';
+        console.log('[Focus Nudge] Focus Companion module imported:', focusCompanion);
+        window.focusCompanion = focusCompanion;
+        console.log('[Focus Nudge] Focus Companion assigned to window object');
+        document.dispatchEvent(new CustomEvent('focus-companion-loaded'));
+      `;
+      
+      // Add to document
+      document.head.appendChild(script);
+      console.log('[Focus Nudge] Script element added to document head');
+      
+      // Listen for load event
+      document.addEventListener('focus-companion-loaded', () => {
+        console.log('[Focus Nudge] Focus Companion loaded successfully');
+        console.log('[Focus Nudge] Focus Companion object:', window.focusCompanion);
+        
+        // Check if the DOM elements were created
+        const companionElement = document.querySelector('.focus-companion');
+        const statusIndicator = document.querySelector('.focus-status-indicator');
+        console.log('[Focus Nudge] Companion element exists:', !!companionElement);
+        console.log('[Focus Nudge] Status indicator exists:', !!statusIndicator);
+        
+        resolve();
+      }, { once: true });
+      
+      // Set timeout for loading
+      setTimeout(() => {
+        if (!window.focusCompanion) {
+          console.error('[Focus Nudge] Focus Companion loading timed out');
+          console.error('[Focus Nudge] Document head contents:', document.head.innerHTML);
+          reject(new Error('Focus Companion loading timed out'));
+        }
+      }, 5000);
+    } catch (error) {
+      console.error('[Focus Nudge] Error loading Focus Companion:', error);
+      reject(error);
+    }
+  });
+}
+
+/**
+ * Show a simple alert when task detection fails to use Focus Companion
+ * @param {Object} taskData - Task detection data
+ */
+function showSimpleTaskAlert(taskData) {
   // Create alert container
   const alertContainer = document.createElement('div');
   alertContainer.style.cssText = `

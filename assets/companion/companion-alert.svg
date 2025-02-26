@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base circle -->
+  <circle cx="60" cy="60" r="50" fill="url(#gradient)" />
+  
+  <!-- Face -->
+  <g id="face" class="animate-face">
+    <!-- Eyes (wide open) -->
+    <circle id="left-eye" cx="45" cy="50" r="8" fill="white" />
+    <circle id="right-eye" cx="75" cy="50" r="8" fill="white" />
+    
+    <!-- Pupils (alert) -->
+    <circle id="left-pupil" cx="45" cy="50" r="4" fill="#333" class="pupil" />
+    <circle id="right-pupil" cx="75" cy="50" r="4" fill="#333" class="pupil" />
+    
+    <!-- Eyebrows (raised) -->
+    <path id="left-eyebrow" d="M35,35 Q45,30 55,35" stroke="#333" stroke-width="2" fill="none" />
+    <path id="right-eyebrow" d="M65,35 Q75,30 85,35" stroke="#333" stroke-width="2" fill="none" />
+    
+    <!-- Mouth (small o) -->
+    <circle id="mouth" cx="60" cy="75" r="5" stroke="#333" stroke-width="2" fill="none" />
+    
+    <!-- Alert symbol -->
+    <g id="alert-symbol">
+      <circle cx="60" cy="25" r="10" fill="#ffcc00" />
+      <text x="60" y="30" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#333">!</text>
+    </g>
+  </g>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6e8efb" />
+      <stop offset="100%" stop-color="#a777e3" />
+    </linearGradient>
+    
+    <!-- Animation for alert -->
+    <style type="text/css">
+      @keyframes alert-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      
+      #face {
+        animation: alert-pulse 0.5s infinite ease-in-out;
+      }
+      
+      @keyframes alert-symbol-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.1); opacity: 0.9; }
+      }
+      
+      #alert-symbol {
+        animation: alert-symbol-pulse 1s infinite ease-in-out;
+        transform-origin: center;
+      }
+      
+      @keyframes pupil-alert {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+      }
+      
+      .pupil {
+        animation: pupil-alert 0.5s infinite ease-in-out;
+      }
+    </style>
+  </defs>
+</svg>

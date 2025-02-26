@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base circle -->
+  <circle cx="60" cy="60" r="50" fill="url(#gradient)" />
+  
+  <!-- Face -->
+  <g id="face" class="animate-face">
+    <!-- Eyes (happy curved eyes) -->
+    <path id="left-eye" d="M38,50 Q45,43 52,50" stroke="white" stroke-width="3" fill="none" />
+    <path id="right-eye" d="M68,50 Q75,43 82,50" stroke="white" stroke-width="3" fill="none" />
+    
+    <!-- Eyebrows (raised) -->
+    <path id="left-eyebrow" d="M35,35 Q45,30 55,35" stroke="#333" stroke-width="2" fill="none" />
+    <path id="right-eyebrow" d="M65,35 Q75,30 85,35" stroke="#333" stroke-width="2" fill="none" />
+    
+    <!-- Mouth (big smile) -->
+    <path id="mouth" d="M40,70 Q60,90 80,70" stroke="#333" stroke-width="3" fill="none" />
+  </g>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6e8efb" />
+      <stop offset="100%" stop-color="#a777e3" />
+    </linearGradient>
+    
+    <!-- Animation for happy bounce -->
+    <style type="text/css">
+      @keyframes happy-bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+      }
+      
+      #face {
+        animation: happy-bounce 1s infinite ease-in-out;
+      }
+      
+      @keyframes mouth-wiggle {
+        0%, 100% { d: path('M40,70 Q60,90 80,70'); }
+        50% { d: path('M40,70 Q60,92 80,70'); }
+      }
+      
+      #mouth {
+        animation: mouth-wiggle 1.5s infinite ease-in-out;
+      }
+    </style>
+  </defs>
+</svg>

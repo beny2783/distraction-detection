@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base circle -->
+  <circle cx="60" cy="60" r="50" fill="url(#gradient)" />
+  
+  <!-- Face -->
+  <g id="face" class="animate-face">
+    <!-- Eyes (focused) -->
+    <circle id="left-eye" cx="45" cy="50" r="6" fill="white" />
+    <circle id="right-eye" cx="75" cy="50" r="6" fill="white" />
+    
+    <!-- Pupils (looking up) -->
+    <circle id="left-pupil" cx="45" cy="48" r="3" fill="#333" class="pupil" />
+    <circle id="right-pupil" cx="75" cy="48" r="3" fill="#333" class="pupil" />
+    
+    <!-- Eyebrows (one raised) -->
+    <path id="left-eyebrow" d="M35,40 Q45,35 55,40" stroke="#333" stroke-width="2" fill="none" />
+    <path id="right-eyebrow" d="M65,35 Q75,30 85,35" stroke="#333" stroke-width="2" fill="none" />
+    
+    <!-- Mouth (thinking) -->
+    <path id="mouth" d="M50,75 Q60,75 70,75" stroke="#333" stroke-width="2" fill="none" />
+    
+    <!-- Thinking bubble -->
+    <circle id="thought-bubble-1" cx="90" cy="30" r="5" fill="white" />
+    <circle id="thought-bubble-2" cx="100" cy="20" r="8" fill="white" />
+  </g>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6e8efb" />
+      <stop offset="100%" stop-color="#a777e3" />
+    </linearGradient>
+    
+    <!-- Animation for thinking -->
+    <style type="text/css">
+      @keyframes blink {
+        0%, 90%, 100% { transform: scaleY(1); }
+        95% { transform: scaleY(0.1); }
+      }
+      
+      #left-eye, #right-eye {
+        animation: blink 4s infinite ease-in-out;
+        transform-origin: center;
+      }
+      
+      @keyframes pupil-think {
+        0%, 100% { transform: translate(0, -2px); }
+        50% { transform: translate(0, -1px); }
+      }
+      
+      .pupil {
+        animation: pupil-think 3s infinite ease-in-out;
+      }
+      
+      @keyframes eyebrow-think {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-2px); }
+      }
+      
+      #right-eyebrow {
+        animation: eyebrow-think 2s infinite ease-in-out;
+      }
+      
+      @keyframes bubble-float {
+        0%, 100% { transform: translate(0, 0); }
+        50% { transform: translate(0, -3px); }
+      }
+      
+      #thought-bubble-1 {
+        animation: bubble-float 2s infinite ease-in-out;
+      }
+      
+      #thought-bubble-2 {
+        animation: bubble-float 2s infinite ease-in-out 0.5s;
+      }
+    </style>
+  </defs>
+</svg>

@@ -1,0 +1,601 @@
+/**
+ * Focus Companion
+ * 
+ * A friendly assistant that appears when tasks are detected,
+ * offering contextual help without being intrusive.
+ */
+
+class FocusCompanion {
+  constructor() {
+    console.log('[Focus Companion] Constructor called');
+    this.container = null;
+    this.bubble = null;
+    this.avatar = null;
+    this.statusIndicator = null;
+    this.currentState = 'idle';
+    this.currentTask = null;
+    this.previousTask = null;
+    this.isVisible = false;
+    this.expressions = {
+      idle: '../assets/companion/companion.svg',
+      happy: '../assets/companion/companion-happy.svg',
+      thinking: '../assets/companion/companion-thinking.svg',
+      alert: '../assets/companion/companion-alert.svg'
+    };
+    
+    // Log the expression paths
+    console.log('[Focus Companion] Expression paths:', this.expressions);
+    
+    // Initialize the companion
+    this.init();
+  }
+  
+  /**
+   * Initialize the companion
+   */
+  init() {
+    console.log('[Focus Companion] Initializing...');
+    
+    // Create the companion container
+    this.createCompanionElements();
+    
+    // Add event listeners
+    this.addEventListeners();
+    
+    // Show the companion immediately with a welcome message
+    console.log('[Focus Companion] About to show welcome message');
+    this.showWelcomeMessage();
+    
+    console.log('[Focus Companion] Initialized successfully');
+  }
+  
+  /**
+   * Create the companion UI elements
+   */
+  createCompanionElements() {
+    console.log('[Focus Companion] Creating UI elements');
+    
+    // Create main container
+    this.container = document.createElement('div');
+    this.container.className = 'focus-companion';
+    
+    // Create avatar
+    this.avatar = document.createElement('div');
+    this.avatar.className = 'companion-avatar';
+    this.setExpression('idle');
+    
+    // Create speech bubble
+    this.bubble = document.createElement('div');
+    this.bubble.className = 'companion-bubble';
+    
+    // Create status indicator
+    this.statusIndicator = document.createElement('div');
+    this.statusIndicator.className = 'focus-status-indicator';
+    this.statusIndicator.innerHTML = '<div class="status-icon">🔍</div>';
+    
+    // Add elements to container
+    this.container.appendChild(this.avatar);
+    this.container.appendChild(this.bubble);
+    
+    // Add elements to document
+    document.body.appendChild(this.container);
+    document.body.appendChild(this.statusIndicator);
+    
+    console.log('[Focus Companion] UI elements created and added to document');
+    console.log('[Focus Companion] Container:', this.container);
+    console.log('[Focus Companion] Avatar:', this.avatar);
+    console.log('[Focus Companion] Bubble:', this.bubble);
+    console.log('[Focus Companion] Status Indicator:', this.statusIndicator);
+  }
+  
+  /**
+   * Add event listeners
+   */
+  addEventListeners() {
+    // Status indicator click
+    this.statusIndicator.addEventListener('click', () => {
+      this.show();
+    });
+    
+    // Document click (for hiding)
+    document.addEventListener('click', (e) => {
+      if (this.isVisible && 
+          !this.container.contains(e.target) && 
+          !this.statusIndicator.contains(e.target)) {
+        this.hide();
+      }
+    });
+  }
+  
+  /**
+   * Set the companion expression
+   * @param {string} expression - The expression to set
+   */
+  setExpression(expression) {
+    console.log(`[Focus Companion] Setting expression to "${expression}"`);
+    
+    if (!this.expressions[expression]) {
+      console.error(`[Focus Companion] Expression "${expression}" not found`);
+      return;
+    }
+    
+    const imagePath = this.expressions[expression];
+    console.log(`[Focus Companion] Using image path: ${imagePath}`);
+    
+    this.currentState = expression;
+    this.avatar.innerHTML = `<img src="${imagePath}" alt="Focus Companion" />`;
+    
+    // Check if the image loaded correctly
+    setTimeout(() => {
+      const img = this.avatar.querySelector('img');
+      if (img) {
+        console.log(`[Focus Companion] Image element created:`, img);
+        img.onerror = () => console.error(`[Focus Companion] Failed to load image: ${imagePath}`);
+        img.onload = () => console.log(`[Focus Companion] Successfully loaded image: ${imagePath}`);
+      } else {
+        console.error(`[Focus Companion] No image element found in avatar`);
+      }
+    }, 100);
+  }
+  
+  /**
+   * Show the companion
+   */
+  show() {
+    console.log('[Focus Companion] Show method called, isVisible:', this.isVisible);
+    
+    if (this.isVisible) return;
+    
+    console.log('[Focus Companion] Adding visible class to container');
+    this.container.classList.add('visible');
+    console.log('[Focus Companion] Removing visible class from status indicator');
+    this.statusIndicator.classList.remove('visible');
+    this.isVisible = true;
+    
+    // Debug element visibility
+    setTimeout(() => {
+      console.log('[Focus Companion] Container classes:', this.container.className);
+      console.log('[Focus Companion] Container style (computed):', window.getComputedStyle(this.container));
+      console.log('[Focus Companion] Status indicator classes:', this.statusIndicator.className);
+    }, 100);
+  }
+  
+  /**
+   * Hide the companion
+   */
+  hide() {
+    console.log('[Focus Companion] Hide method called, isVisible:', this.isVisible);
+    
+    if (!this.isVisible) return;
+    
+    console.log('[Focus Companion] Removing visible class from container');
+    this.container.classList.remove('visible');
+    console.log('[Focus Companion] Adding visible class to status indicator');
+    this.statusIndicator.classList.add('visible');
+    this.isVisible = false;
+  }
+  
+  /**
+   * Show a task detection notification
+   * @param {Object} taskData - The detected task data
+   */
+  showTaskDetection(taskData) {
+    console.log('[Focus Companion] Task detected:', taskData);
+    
+    // Update task tracking
+    this.previousTask = this.currentTask;
+    this.currentTask = taskData;
+    
+    // Set appropriate expression
+    this.setExpression('thinking');
+    
+    // Create bubble content
+    this.bubble.innerHTML = `
+      <div class="bubble-header">
+        <span class="task-icon">${this.getTaskIcon(taskData.taskType)}</span>
+        <span class="task-name">${this.getTaskName(taskData.taskType)}</span>
+        <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
+      </div>
+      <div class="bubble-content">
+        ${this.getTaskMessage(taskData.taskType)}
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="enable-task-mode">Enable</button>
+        <button class="action-button secondary" id="dismiss-task">Not now</button>
+        <button class="action-button tertiary" id="task-settings">Settings</button>
+      </div>
+    `;
+    
+    // Add event listeners to buttons
+    document.getElementById('enable-task-mode').addEventListener('click', () => {
+      this.enableTaskMode(taskData);
+    });
+    
+    document.getElementById('dismiss-task').addEventListener('click', () => {
+      this.dismissTask();
+    });
+    
+    document.getElementById('task-settings').addEventListener('click', () => {
+      this.openTaskSettings();
+    });
+    
+    // Show the companion
+    this.show();
+    
+    // If this is a task switch, show the transition UI
+    if (this.previousTask && this.previousTask.taskType !== taskData.taskType) {
+      this.showTaskTransition(this.previousTask, taskData);
+    }
+  }
+  
+  /**
+   * Enable task mode
+   * @param {Object} taskData - The task data
+   */
+  enableTaskMode(taskData) {
+    console.log('[Focus Companion] Enabling task mode:', taskData);
+    
+    // Set happy expression
+    this.setExpression('happy');
+    
+    // Update bubble content
+    this.bubble.innerHTML = `
+      <div class="bubble-header">
+        <span class="task-icon">${this.getTaskIcon(taskData.taskType)}</span>
+        <span class="task-name">${this.getTaskName(taskData.taskType)} Mode</span>
+        <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
+      </div>
+      <div class="bubble-content">
+        ${this.getTaskName(taskData.taskType)} Mode enabled! I'll help you stay focused.
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="got-it">Got it!</button>
+      </div>
+    `;
+    
+    // Add event listener to button
+    document.getElementById('got-it').addEventListener('click', () => {
+      this.hide();
+    });
+    
+    // Send message to background script to enable task mode
+    chrome.runtime.sendMessage({
+      type: 'ENABLE_TASK_MODE',
+      taskType: taskData.taskType,
+      confidence: taskData.confidence
+    });
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      this.hide();
+    }, 5000);
+  }
+  
+  /**
+   * Dismiss task
+   */
+  dismissTask() {
+    console.log('[Focus Companion] Task dismissed');
+    
+    // Set idle expression
+    this.setExpression('idle');
+    
+    // Hide the companion
+    this.hide();
+    
+    // Send message to background script
+    chrome.runtime.sendMessage({
+      type: 'DISMISS_TASK',
+      taskType: this.currentTask.taskType
+    });
+  }
+  
+  /**
+   * Open task settings
+   */
+  openTaskSettings() {
+    console.log('[Focus Companion] Opening task settings');
+    
+    // Send message to background script
+    chrome.runtime.sendMessage({
+      type: 'OPEN_TASK_SETTINGS',
+      taskType: this.currentTask.taskType
+    });
+  }
+  
+  /**
+   * Show task transition UI
+   * @param {Object} previousTask - The previous task
+   * @param {Object} newTask - The new task
+   */
+  showTaskTransition(previousTask, newTask) {
+    console.log('[Focus Companion] Task transition:', previousTask, newTask);
+    
+    // Create transition element
+    const transitionEl = document.createElement('div');
+    transitionEl.className = 'task-transition';
+    
+    // Set content
+    transitionEl.innerHTML = `
+      <div class="transition-header">
+        <span class="transition-icon">🔄</span>
+        <span class="transition-title">Task Switching</span>
+      </div>
+      <div class="transition-content">
+        You're switching tasks. Would you like to update your focus mode?
+      </div>
+      <div class="transition-tasks">
+        <div class="previous-task">
+          <div class="task-label">Previous</div>
+          <div class="task-value">${this.getTaskName(previousTask.taskType)}</div>
+        </div>
+        <div class="task-arrow">→</div>
+        <div class="new-task">
+          <div class="task-label">New</div>
+          <div class="task-value">${this.getTaskName(newTask.taskType)}</div>
+        </div>
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="update-task">Update</button>
+        <button class="action-button secondary" id="ignore-switch">Ignore</button>
+      </div>
+    `;
+    
+    // Add to document
+    document.body.appendChild(transitionEl);
+    
+    // Add event listeners
+    document.getElementById('update-task').addEventListener('click', () => {
+      this.enableTaskMode(newTask);
+      document.body.removeChild(transitionEl);
+    });
+    
+    document.getElementById('ignore-switch').addEventListener('click', () => {
+      document.body.removeChild(transitionEl);
+    });
+    
+    // Show the transition
+    setTimeout(() => {
+      transitionEl.classList.add('visible');
+    }, 100);
+    
+    // Auto-hide after 10 seconds
+    setTimeout(() => {
+      if (document.body.contains(transitionEl)) {
+        transitionEl.classList.remove('visible');
+        setTimeout(() => {
+          if (document.body.contains(transitionEl)) {
+            document.body.removeChild(transitionEl);
+          }
+        }, 400);
+      }
+    }, 10000);
+  }
+  
+  /**
+   * Show a distraction alert
+   * @param {Object} distractionData - The distraction data
+   */
+  showDistractionAlert(distractionData) {
+    console.log('[Focus Companion] Distraction detected:', distractionData);
+    
+    // Set alert expression
+    this.setExpression('alert');
+    
+    // Create bubble content
+    this.bubble.innerHTML = `
+      <div class="bubble-header">
+        <span class="task-icon">⚠️</span>
+        <span class="task-name">Distraction Alert</span>
+        <span class="confidence">${Math.round(distractionData.confidence * 100)}%</span>
+      </div>
+      <div class="bubble-content">
+        ${this.getDistractionMessage(distractionData.distractionType)}
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="refocus">Refocus</button>
+        <button class="action-button secondary" id="dismiss-distraction">Dismiss</button>
+      </div>
+    `;
+    
+    // Add event listeners to buttons
+    document.getElementById('refocus').addEventListener('click', () => {
+      this.refocus(distractionData);
+    });
+    
+    document.getElementById('dismiss-distraction').addEventListener('click', () => {
+      this.dismissDistraction();
+    });
+    
+    // Show the companion
+    this.show();
+  }
+  
+  /**
+   * Refocus after distraction
+   * @param {Object} distractionData - The distraction data
+   */
+  refocus(distractionData) {
+    console.log('[Focus Companion] Refocusing:', distractionData);
+    
+    // Set thinking expression
+    this.setExpression('thinking');
+    
+    // Update bubble content
+    this.bubble.innerHTML = `
+      <div class="bubble-header">
+        <span class="task-icon">${this.getTaskIcon(this.currentTask.taskType)}</span>
+        <span class="task-name">${this.getTaskName(this.currentTask.taskType)} Mode</span>
+      </div>
+      <div class="bubble-content">
+        Let's get back to ${this.getTaskName(this.currentTask.taskType.toLowerCase())}. You can do this!
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="got-it-refocus">Got it!</button>
+      </div>
+    `;
+    
+    // Add event listener to button
+    document.getElementById('got-it-refocus').addEventListener('click', () => {
+      this.hide();
+    });
+    
+    // Send message to background script
+    chrome.runtime.sendMessage({
+      type: 'REFOCUS',
+      taskType: this.currentTask.taskType,
+      distractionType: distractionData.distractionType
+    });
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      this.hide();
+    }, 5000);
+  }
+  
+  /**
+   * Dismiss distraction
+   */
+  dismissDistraction() {
+    console.log('[Focus Companion] Distraction dismissed');
+    
+    // Set idle expression
+    this.setExpression('idle');
+    
+    // Hide the companion
+    this.hide();
+    
+    // Send message to background script
+    chrome.runtime.sendMessage({
+      type: 'DISMISS_DISTRACTION'
+    });
+  }
+  
+  /**
+   * Get task icon based on task type
+   * @param {string} taskType - The task type
+   * @returns {string} - The task icon
+   */
+  getTaskIcon(taskType) {
+    const icons = {
+      'research': '🔍',
+      'writing': '✏️',
+      'coding': '💻',
+      'reading': '📚',
+      'job_application': '📝',
+      'learning': '🧠',
+      'email': '📧',
+      'social_media': '👥',
+      'shopping': '🛒',
+      'default': '🎯'
+    };
+    
+    return icons[taskType] || icons.default;
+  }
+  
+  /**
+   * Get task name based on task type
+   * @param {string} taskType - The task type
+   * @returns {string} - The task name
+   */
+  getTaskName(taskType) {
+    const names = {
+      'research': 'Research',
+      'writing': 'Writing',
+      'coding': 'Coding',
+      'reading': 'Reading',
+      'job_application': 'Job Application',
+      'learning': 'Learning',
+      'email': 'Email',
+      'social_media': 'Social Media',
+      'shopping': 'Shopping',
+      'default': 'Focus'
+    };
+    
+    return names[taskType] || names.default;
+  }
+  
+  /**
+   * Get task message based on task type
+   * @param {string} taskType - The task type
+   * @returns {string} - The task message
+   */
+  getTaskMessage(taskType) {
+    const messages = {
+      'research': 'I notice you\'re researching a topic. Would you like to enable Research Focus Mode?',
+      'writing': 'It looks like you\'re writing. Would you like to enable Writing Focus Mode?',
+      'coding': 'I see you\'re coding. Would you like to enable Coding Focus Mode?',
+      'reading': 'It seems you\'re reading. Would you like to enable Reading Focus Mode?',
+      'job_application': 'I notice you\'re applying for jobs. Would you like to enable Job Application Focus Mode?',
+      'learning': 'It looks like you\'re learning something new. Would you like to enable Learning Focus Mode?',
+      'email': 'I see you\'re managing emails. Would you like to enable Email Focus Mode?',
+      'social_media': 'You\'re browsing social media. Would you like to set a time limit?',
+      'shopping': 'I notice you\'re shopping. Would you like to set a budget reminder?',
+      'default': 'I\'ve detected a task. Would you like to enable Focus Mode?'
+    };
+    
+    return messages[taskType] || messages.default;
+  }
+  
+  /**
+   * Get distraction message based on distraction type
+   * @param {string} distractionType - The distraction type
+   * @returns {string} - The distraction message
+   */
+  getDistractionMessage(distractionType) {
+    const messages = {
+      'social_media': 'You seem to be getting distracted by social media. Would you like to refocus?',
+      'entertainment': 'You appear to be browsing entertainment content. Would you like to get back on track?',
+      'shopping': 'You\'ve switched to shopping. Would you like to return to your task?',
+      'news': 'You\'re browsing news sites. Would you like to refocus on your task?',
+      'default': 'You seem to be getting distracted. Would you like to refocus on your task?'
+    };
+    
+    return messages[distractionType] || messages.default;
+  }
+  
+  /**
+   * Show a welcome message
+   */
+  showWelcomeMessage() {
+    console.log('[Focus Companion] Showing welcome message');
+    
+    // Set happy expression
+    this.setExpression('happy');
+    
+    // Create bubble content
+    this.bubble.innerHTML = `
+      <div class="bubble-header">
+        <span class="task-icon">👋</span>
+        <span class="task-name">Welcome!</span>
+      </div>
+      <div class="bubble-content">
+        Hello! I'm your Focus Companion. I'll help you stay on track and be more productive.
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="welcome-got-it">Got it!</button>
+      </div>
+    `;
+    
+    // Add event listener to button
+    setTimeout(() => {
+      const button = document.getElementById('welcome-got-it');
+      if (button) {
+        console.log('[Focus Companion] Welcome button found, adding event listener');
+        button.addEventListener('click', () => {
+          this.hide();
+        });
+      } else {
+        console.error('[Focus Companion] Welcome button not found');
+      }
+    }, 100);
+    
+    // Show the companion
+    console.log('[Focus Companion] Calling show() method');
+    this.show();
+  }
+}
+
+// Create and export the companion instance
+const focusCompanion = new FocusCompanion();
+export default focusCompanion; 

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG Test</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .svg-container {
+      margin: 20px 0;
+      padding: 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    .svg-container img {
+      width: 100px;
+      height: 100px;
+    }
+  </style>
+</head>
+<body>
+  <h1>SVG Test</h1>
+  
+  <div class="svg-container">
+    <h2>Direct Path</h2>
+    <p>Using direct path from server root:</p>
+    <img src="/assets/companion/companion.svg" alt="Companion (Direct)">
+    <img src="/assets/companion/companion-happy.svg" alt="Companion Happy (Direct)">
+    <img src="/assets/companion/companion-thinking.svg" alt="Companion Thinking (Direct)">
+    <img src="/assets/companion/companion-alert.svg" alt="Companion Alert (Direct)">
+  </div>
+  
+  <div class="svg-container">
+    <h2>Relative Path</h2>
+    <p>Using relative path from this HTML file:</p>
+    <img src="../assets/companion/companion.svg" alt="Companion (Relative)">
+    <img src="../assets/companion/companion-happy.svg" alt="Companion Happy (Relative)">
+    <img src="../assets/companion/companion-thinking.svg" alt="Companion Thinking (Relative)">
+    <img src="../assets/companion/companion-alert.svg" alt="Companion Alert (Relative)">
+  </div>
+</body>
+</html> 

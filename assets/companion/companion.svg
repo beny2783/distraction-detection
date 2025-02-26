@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base circle -->
+  <circle cx="60" cy="60" r="50" fill="url(#gradient)" />
+  
+  <!-- Face -->
+  <g id="face" class="animate-face">
+    <!-- Eyes -->
+    <circle id="left-eye" cx="45" cy="50" r="6" fill="white" />
+    <circle id="right-eye" cx="75" cy="50" r="6" fill="white" />
+    
+    <!-- Pupils (can be animated) -->
+    <circle id="left-pupil" cx="45" cy="50" r="3" fill="#333" class="pupil" />
+    <circle id="right-pupil" cx="75" cy="50" r="3" fill="#333" class="pupil" />
+    
+    <!-- Eyebrows -->
+    <path id="left-eyebrow" d="M35,40 Q45,35 55,40" stroke="#333" stroke-width="2" fill="none" />
+    <path id="right-eyebrow" d="M65,40 Q75,35 85,40" stroke="#333" stroke-width="2" fill="none" />
+    
+    <!-- Mouth (can be animated for different expressions) -->
+    <path id="mouth" d="M45,75 Q60,85 75,75" stroke="#333" stroke-width="2" fill="none" />
+  </g>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6e8efb" />
+      <stop offset="100%" stop-color="#a777e3" />
+    </linearGradient>
+    
+    <!-- Animation for blinking -->
+    <style type="text/css">
+      @keyframes blink {
+        0%, 90%, 100% { transform: scaleY(1); }
+        95% { transform: scaleY(0.1); }
+      }
+      
+      #left-eye, #right-eye {
+        animation: blink 4s infinite ease-in-out;
+        transform-origin: center;
+      }
+      
+      @keyframes pupil-move {
+        0%, 100% { transform: translate(0, 0); }
+        25% { transform: translate(2px, 1px); }
+        50% { transform: translate(-1px, 2px); }
+        75% { transform: translate(-2px, -1px); }
+      }
+      
+      .pupil {
+        animation: pupil-move 5s infinite ease-in-out;
+      }
+      
+      @keyframes mouth-change {
+        0%, 100% { d: path('M45,75 Q60,85 75,75'); }
+        50% { d: path('M45,75 Q60,80 75,75'); }
+      }
+      
+      #mouth {
+        animation: mouth-change 8s infinite ease-in-out;
+      }
+    </style>
+  </defs>
+</svg>
