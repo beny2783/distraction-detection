@@ -192,10 +192,41 @@
     }
     
     .feature-value {
-      width: 50px;
-      font-size: 14px;
-      text-align: right;
       font-weight: 500;
+      margin-left: 10px;
+      min-width: 40px;
+      text-align: right;
+    }
+    
+    .timeline-legend {
+      display: flex;
+      justify-content: center;
+      margin-top: 15px;
+      flex-wrap: wrap;
+    }
+    
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin: 0 15px;
+    }
+    
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      margin-right: 8px;
+    }
+    
+    .legend-label {
+      font-size: 14px;
+      color: #666;
+    }
+    
+    @media (max-width: 768px) {
+      .stats-grid {
+        grid-template-columns: 1fr 1fr;
+      }
     }
   </style>
 </head>
@@ -236,6 +267,34 @@
         <div class="stat-card">
           <div class="stat-value" id="focus-score">0%</div>
           <div class="stat-label">Focus Score</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Distraction Score Timeline</div>
+      <div id="distraction-timeline" class="chart-container">
+        <!-- Timeline chart will be rendered here -->
+        <div class="empty-state">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 21H4.6C3.1 21 2 19.9 2 18.4V3" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 7L16 12L13 9L9 13L7 11" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p>Not enough data to display timeline</p>
+        </div>
+      </div>
+      <div class="timeline-legend">
+        <div class="legend-item">
+          <div class="legend-color" style="background-color: #e74c3c;"></div>
+          <div class="legend-label">High Distraction (70-100%)</div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background-color: #f39c12;"></div>
+          <div class="legend-label">Medium Distraction (40-69%)</div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background-color: #2ecc71;"></div>
+          <div class="legend-label">Low Distraction (0-39%)</div>
         </div>
       </div>
     </div>

@@ -14,10 +14,12 @@ const distractionTableBody = document.getElementById('distraction-table-body');
 const modelTypeElement = document.getElementById('model-type');
 const modelVersionElement = document.getElementById('model-version');
 const featureImportanceElement = document.getElementById('feature-importance');
+const distractionTimelineElement = document.getElementById('distraction-timeline');
 
 // State
 let sessionData = {};
 let nudgeFeedback = [];
+let distractionScores = [];
 let modelInfo = {
   type: 'random-forest',
   version: '0.1.0'
@@ -32,13 +34,17 @@ let stats = {
 
 // Load data from storage
 const loadData = () => {
-  chrome.storage.local.get(['sessionData', 'nudgeFeedback', 'userPreferences'], (result) => {
+  chrome.storage.local.get(['sessionData', 'nudgeFeedback', 'userPreferences', 'distractionScores'], (result) => {
     if (result.sessionData) {
       sessionData = result.sessionData;
     }
     
     if (result.nudgeFeedback) {
       nudgeFeedback = result.nudgeFeedback;
+    }
+    
+    if (result.distractionScores) {
+      distractionScores = result.distractionScores;
     }
     
     // Get model info
@@ -125,6 +131,25 @@ const updateFeatureImportance = () => {
   });
 };
 
+// Format time in a human-readable format
+const formatTime = (milliseconds) => {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else {
+    return `${minutes}m`;
+  }
+};
+
+// Format date for timeline display
+const formatDate = (timestamp) => {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
 // Process data based on time range
 const processData = (timeRange) => {
   // Reset stats
@@ -194,13 +219,12 @@ const processData = (timeRange) => {
   
   // Update UI
   updateUI();
-};
-
-// Format time in hours and minutes
-const formatTime = (milliseconds) => {
-  const hours = Math.floor(milliseconds / (60 * 60 * 1000));
-  const minutes = Math.floor((milliseconds % (60 * 60 * 1000)) / (60 * 1000));
-  return `${hours}h ${minutes}m`;
+  
+  // Filter distraction scores for the selected time range
+  const filteredScores = distractionScores.filter(score => score.timestamp >= startTimestamp);
+  
+  // Update distraction timeline
+  updateDistractionTimeline(filteredScores);
 };
 
 // Update UI with processed data
@@ -249,14 +273,165 @@ const updateUI = () => {
       distractionTableBody.appendChild(row);
     });
   }
-  
-  // TODO: Add chart visualization in future versions
 };
 
-// Event Listeners
-timeRangeSelect.addEventListener('change', () => {
-  processData(timeRangeSelect.value);
+// Update distraction timeline
+const updateDistractionTimeline = (scores) => {
+  // Clear previous content
+  distractionTimelineElement.innerHTML = '';
+  
+  if (scores.length === 0) {
+    // No data, show empty state
+    distractionTimelineElement.innerHTML = `
+      <div class="empty-state">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21 21H4.6C3.1 21 2 19.9 2 18.4V3" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M21 7L16 12L13 9L9 13L7 11" stroke="#CCCCCC" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p>Not enough data to display timeline</p>
+      </div>
+    `;
+    return;
+  }
+  
+  // Create timeline container
+  const timelineContainer = document.createElement('div');
+  timelineContainer.className = 'timeline-container';
+  
+  // Create timeline chart
+  const chartContainer = document.createElement('div');
+  chartContainer.className = 'timeline-chart';
+  
+  // Create X-axis (time)
+  const xAxis = document.createElement('div');
+  xAxis.className = 'timeline-x-axis';
+  
+  // Create bars container
+  const barsContainer = document.createElement('div');
+  barsContainer.className = 'timeline-bars';
+  
+  // Add bars for each score
+  scores.forEach(score => {
+    // Create bar
+    const bar = document.createElement('div');
+    bar.className = 'timeline-bar';
+    
+    // Calculate height based on score (0-100%)
+    const height = Math.round(score.overallScore * 100);
+    bar.style.height = `${height}%`;
+    
+    // Set color based on score
+    if (height >= 70) {
+      bar.style.backgroundColor = '#e74c3c'; // Red for high distraction
+    } else if (height >= 40) {
+      bar.style.backgroundColor = '#f39c12'; // Orange for medium distraction
+    } else {
+      bar.style.backgroundColor = '#2ecc71'; // Green for low distraction
+    }
+    
+    // Add tooltip with details
+    bar.title = `Time: ${formatDate(score.timestamp)}
+Score: ${height}%
+Events: ${score.totalEvents}`;
+    
+    // Add to container
+    barsContainer.appendChild(bar);
+    
+    // Add time label to X-axis (only for every 3rd bar to avoid crowding)
+    const timeLabel = document.createElement('div');
+    timeLabel.className = 'timeline-time-label';
+    timeLabel.textContent = formatDate(score.timestamp);
+    xAxis.appendChild(timeLabel);
+  });
+  
+  // Assemble chart
+  chartContainer.appendChild(barsContainer);
+  timelineContainer.appendChild(chartContainer);
+  timelineContainer.appendChild(xAxis);
+  
+  // Add to DOM
+  distractionTimelineElement.appendChild(timelineContainer);
+  
+  // Add CSS for the timeline
+  const style = document.createElement('style');
+  style.textContent = `
+    .timeline-container {
+      width: 100%;
+      height: 250px;
+      margin-top: 20px;
+    }
+    
+    .timeline-chart {
+      height: 200px;
+      width: 100%;
+      position: relative;
+      border-left: 1px solid #ddd;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    .timeline-bars {
+      display: flex;
+      height: 100%;
+      align-items: flex-end;
+      padding: 0 10px;
+    }
+    
+    .timeline-bar {
+      flex: 1;
+      margin: 0 2px;
+      min-width: 10px;
+      max-width: 30px;
+      border-radius: 2px 2px 0 0;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    
+    .timeline-bar:hover {
+      opacity: 0.8;
+    }
+    
+    .timeline-x-axis {
+      display: flex;
+      width: 100%;
+      overflow-x: auto;
+      padding: 5px 10px;
+    }
+    
+    .timeline-time-label {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+      min-width: 10px;
+      max-width: 30px;
+      margin: 0 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  `;
+  
+  document.head.appendChild(style);
+};
+
+// Listen for message updates
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'DISTRACTION_SCORE_UPDATED') {
+    // Add the new score to the array
+    distractionScores.push(message.data);
+    
+    // Re-process data with the updated scores
+    processData(timeRangeSelect.value);
+  }
 });
 
 // Initialize insights page
-document.addEventListener('DOMContentLoaded', loadData); 
+document.addEventListener('DOMContentLoaded', () => {
+  // Load data
+  loadData();
+  
+  // Set up event listeners
+  timeRangeSelect.addEventListener('change', () => {
+    processData(timeRangeSelect.value);
+  });
+}); 

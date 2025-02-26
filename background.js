@@ -15,6 +15,7 @@ const CONFIG = {
   sessionTimeout: 30 * 60 * 1000,           // 30 minutes in milliseconds
   eventProcessingInterval: 5000,            // Process events every 5 seconds
   maxEventsPerProcessing: 1000,             // Maximum events to process at once
+  distractionScoreInterval: 5 * 60 * 1000,  // Calculate distraction score every 5 minutes
   debugMode: true                           // Enable debug logging
 };
 
@@ -37,6 +38,7 @@ let activeTabTitle = '';
 let eventQueue = [];
 let eventProcessorTimer = null;
 let modelManager = null;
+let distractionScores = []; // Array to store periodic distraction scores
 
 /**
  * Initialize the background script
@@ -55,8 +57,11 @@ async function initialize() {
       sessionData = storedSessionData.sessionData;
     }
     
-    // Initialize model manager
-    await initializeModelManager();
+    // Load distraction scores
+    const storedDistractionScores = await chrome.storage.local.get('distractionScores');
+    if (storedDistractionScores.distractionScores) {
+      distractionScores = storedDistractionScores.distractionScores;
+    }
     
     // Set up event listeners
     setupEventListeners();
@@ -64,19 +69,6 @@ async function initialize() {
     // Start event processor
     startEventProcessor();
     
-    if (CONFIG.debugMode) {
-      console.log('Focus Nudge: Background script initialized');
-    }
-  } catch (error) {
-    console.error('Focus Nudge: Error initializing background script:', error);
-  }
-}
-
-/**
- * Initialize the model manager
- */
-async function initializeModelManager() {
-  try {
     // Create and initialize model manager
     modelManager = new ModelManager();
     await modelManager.initialize();
@@ -86,9 +78,17 @@ async function initializeModelManager() {
       periodInMinutes: CONFIG.modelUpdateInterval / (60 * 1000)
     });
     
+    // Set up alarm for periodic distraction score calculation
+    chrome.alarms.create('distractionScore', {
+      periodInMinutes: CONFIG.distractionScoreInterval / (60 * 1000)
+    });
+    
+    if (CONFIG.debugMode) {
+      console.log('Focus Nudge: Background script initialized');
+    }
     return true;
   } catch (error) {
-    console.error('Failed to initialize model manager:', error);
+    console.error('Focus Nudge: Error initializing background script:', error);
     return false;
   }
 }
@@ -301,9 +301,132 @@ async function handleAlarm(alarm) {
       if (modelManager) {
         await modelManager.updateModels();
       }
+    } else if (alarm.name === 'distractionScore') {
+      // Calculate distraction scores
+      await calculateDistractionScores();
     }
   } catch (error) {
     console.error('Error handling alarm:', error);
+  }
+}
+
+/**
+ * Calculate distraction scores based on recent events
+ */
+async function calculateDistractionScores() {
+  try {
+    if (CONFIG.debugMode) {
+      console.log('[Focus Nudge] Calculating periodic distraction score...');
+    }
+    
+    // Get events from the last 5 minutes
+    const now = Date.now();
+    const fiveMinutesAgo = now - CONFIG.distractionScoreInterval;
+    const recentEvents = await getEvents(fiveMinutesAgo, now);
+    
+    if (recentEvents.length === 0) {
+      if (CONFIG.debugMode) {
+        console.log('[Focus Nudge] No recent events found for distraction score calculation');
+      }
+      return;
+    }
+    
+    // Group events by domain
+    const eventsByDomain = {};
+    recentEvents.forEach(event => {
+      let domain = '';
+      
+      // Extract domain from event
+      if (event.payload && event.payload.domain) {
+        domain = event.payload.domain;
+      } else if (event.url) {
+        try {
+          domain = new URL(event.url).hostname;
+        } catch (e) {
+          // Invalid URL, skip
+          return;
+        }
+      }
+      
+      if (!domain) return;
+      
+      if (!eventsByDomain[domain]) {
+        eventsByDomain[domain] = [];
+      }
+      eventsByDomain[domain].push(event);
+    });
+    
+    // Calculate distraction score for each domain
+    const domainScores = {};
+    let overallScore = 0;
+    let totalEvents = 0;
+    
+    for (const [domain, events] of Object.entries(eventsByDomain)) {
+      // Extract features from events
+      const features = extractFeaturesFromEvents(events);
+      
+      // Get prediction from model
+      const modelInput = {
+        events: events,
+        features: features,
+        sessionData: sessionData[domain] || {},
+        userPreferences: userPreferences
+      };
+      
+      const prediction = await modelManager.predict(modelInput);
+      
+      // Store domain score
+      domainScores[domain] = {
+        score: prediction.probability,
+        confidence: prediction.confidence,
+        eventCount: events.length,
+        features: {
+          timeSpent: features.timeSpent,
+          scrollCount: features.scrollCount,
+          clickCount: features.clickCount,
+          keyPressCount: features.keyPressCount
+        }
+      };
+      
+      // Contribute to overall score (weighted by event count)
+      overallScore += prediction.probability * events.length;
+      totalEvents += events.length;
+    }
+    
+    // Calculate overall distraction score
+    const finalScore = totalEvents > 0 ? overallScore / totalEvents : 0;
+    
+    // Create distraction score entry
+    const scoreEntry = {
+      timestamp: now,
+      overallScore: finalScore,
+      domainScores: domainScores,
+      totalEvents: totalEvents
+    };
+    
+    // Add to distraction scores array
+    distractionScores.push(scoreEntry);
+    
+    // Keep only the last 24 hours of scores (288 entries at 5-minute intervals)
+    const oneDayAgo = now - (24 * 60 * 60 * 1000);
+    distractionScores = distractionScores.filter(score => score.timestamp >= oneDayAgo);
+    
+    // Store updated distraction scores
+    await chrome.storage.local.set({ distractionScores });
+    
+    if (CONFIG.debugMode) {
+      console.log(`[Focus Nudge] Distraction score calculated: ${finalScore.toFixed(2)}`, scoreEntry);
+    }
+    
+    // Send message to any open popup or insights page
+    chrome.runtime.sendMessage({
+      type: 'DISTRACTION_SCORE_UPDATED',
+      data: scoreEntry
+    }).catch(() => {
+      // Ignore errors if no listeners
+    });
+  } catch (error) {
+    console.error('Error calculating distraction scores:', error);
   }
 }
 

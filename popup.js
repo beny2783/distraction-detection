@@ -14,6 +14,7 @@ const viewInsightsButton = document.getElementById('view-insights');
 const distractionCountElement = document.getElementById('distraction-count');
 const nudgeCountElement = document.getElementById('nudge-count');
 const topDistractionElement = document.getElementById('top-distraction');
+const currentDistractionScoreElement = document.getElementById('current-distraction-score');
 
 // User preferences
 let userPreferences = {
@@ -28,7 +29,8 @@ let stats = {
   distractionCount: 0,
   nudgeCount: 0,
   topDistraction: 'None',
-  distractionsByDomain: {}
+  distractionsByDomain: {},
+  currentDistractionScore: 0
 };
 
 // Model info
@@ -39,7 +41,7 @@ let modelInfo = {
 
 // Load user preferences and stats
 const loadData = () => {
-  chrome.storage.local.get(['userPreferences', 'sessionData', 'nudgeFeedback'], (result) => {
+  chrome.storage.local.get(['userPreferences', 'sessionData', 'nudgeFeedback', 'distractionScores'], (result) => {
     // Load preferences
     if (result.userPreferences) {
       userPreferences = result.userPreferences;
@@ -105,6 +107,19 @@ const loadData = () => {
       nudgeCountElement.textContent = stats.nudgeCount;
     }
     
+    // Get current distraction score from distraction scores data
+    if (result.distractionScores && result.distractionScores.length > 0) {
+      // Get the most recent distraction score
+      const latestScore = result.distractionScores[result.distractionScores.length - 1];
+      stats.currentDistractionScore = latestScore.overallScore;
+      
+      // Update UI with current distraction score
+      updateDistractionScoreUI(stats.currentDistractionScore);
+    } else {
+      // No distraction scores available
+      currentDistractionScoreElement.textContent = 'N/A';
+    }
+    
     // Get model info
     chrome.runtime.sendMessage({ type: 'get_model_info' }, (response) => {
       if (response) {
@@ -147,61 +162,75 @@ const savePreferences = () => {
   });
 };
 
-// Event Listeners
-nudgingToggle.addEventListener('change', () => {
-  userPreferences.nudgingEnabled = nudgingToggle.checked;
-  savePreferences();
-});
-
-focusGoalInput.addEventListener('blur', () => {
-  userPreferences.focusGoal = focusGoalInput.value.trim();
-  savePreferences();
-});
-
-// Listen for Enter key in focus goal input
-focusGoalInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    userPreferences.focusGoal = focusGoalInput.value.trim();
+// Initialize popup
+document.addEventListener('DOMContentLoaded', () => {
+  // Load data
+  loadData();
+  
+  // Set up event listeners
+  nudgingToggle.addEventListener('change', () => {
+    userPreferences.nudgingEnabled = nudgingToggle.checked;
     savePreferences();
-    focusGoalInput.blur();
-  }
-});
-
-// Listen for sensitivity changes
-sensitivityOptions.forEach(option => {
-  option.addEventListener('change', () => {
-    if (option.checked) {
-      userPreferences.nudgeSensitivity = option.value;
-      savePreferences();
+  });
+  
+  focusGoalInput.addEventListener('change', () => {
+    userPreferences.focusGoal = focusGoalInput.value;
+    savePreferences();
+  });
+  
+  sensitivityOptions.forEach(option => {
+    option.addEventListener('change', () => {
+      if (option.checked) {
+        userPreferences.nudgeSensitivity = option.value;
+        savePreferences();
+      }
+    });
+  });
+  
+  modelTypeSelect.addEventListener('change', () => {
+    userPreferences.modelType = modelTypeSelect.value;
+    savePreferences();
+    
+    // Update model info
+    chrome.runtime.sendMessage({ 
+      type: 'set_model_type',
+      modelType: modelTypeSelect.value
+    }, (response) => {
+      if (response && response.success) {
+        modelInfo = response.modelInfo;
+        updateModelInfo();
+      }
+    });
+  });
+  
+  viewInsightsButton.addEventListener('click', () => {
+    chrome.tabs.create({ url: 'insights.html' });
+  });
+  
+  // Listen for distraction score updates
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'DISTRACTION_SCORE_UPDATED') {
+      // Update the distraction score in the UI
+      stats.currentDistractionScore = message.data.overallScore;
+      updateDistractionScoreUI(stats.currentDistractionScore);
     }
   });
 });
 
-// Listen for model type changes
-modelTypeSelect.addEventListener('change', () => {
-  userPreferences.modelType = modelTypeSelect.value;
-  savePreferences();
+// Update distraction score UI
+const updateDistractionScoreUI = (score) => {
+  // Convert score to percentage and format
+  const scorePercentage = Math.round(score * 100);
   
-  // Update model info with loading message
-  modelInfoElement.textContent = 'Loading model...';
+  // Update UI element
+  currentDistractionScoreElement.textContent = `${scorePercentage}%`;
   
-  // Wait for model to load
-  setTimeout(() => {
-    chrome.runtime.sendMessage({ type: 'get_model_info' }, (response) => {
-      if (response) {
-        modelInfo = response;
-        updateModelInfo();
-      }
-    });
-  }, 500);
-});
-
-// View detailed insights
-viewInsightsButton.addEventListener('click', () => {
-  chrome.tabs.create({
-    url: chrome.runtime.getURL('insights.html')
-  });
-});
-
-// Initialize popup
-document.addEventListener('DOMContentLoaded', loadData); 
+  // Add color coding based on score
+  if (scorePercentage >= 70) {
+    currentDistractionScoreElement.style.color = '#e74c3c'; // Red for high distraction
+  } else if (scorePercentage >= 40) {
+    currentDistractionScoreElement.style.color = '#f39c12'; // Orange for medium distraction
+  } else {
+    currentDistractionScoreElement.style.color = '#2ecc71'; // Green for low distraction
+  }
+}; 
