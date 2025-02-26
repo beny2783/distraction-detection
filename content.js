@@ -640,9 +640,33 @@ function handleMessage(message, sender, sendResponse) {
     sendResponse({ success: true, pageContent });
   } else if (message.type === 'TASK_DETECTED') {
     // Handle task detection events
-    if (message.taskType === 'job_search') {
-      showTaskDetectionAlert(message);
-    }
+    console.log('[Focus Nudge] Task detected:', message);
+    
+    // Map the task type from the background script to the Focus Companion
+    // The background script uses TASK_TYPES.JOB_SEARCH ('job_search')
+    // but the Focus Companion expects 'job_application'
+    const taskTypeMapping = {
+      'job_search': 'job_application',
+      'learning': 'learning',
+      'social_browsing': 'social_media',
+      'shopping': 'shopping',
+      'entertainment': 'default',
+      'research': 'research',
+      'communication': 'email',
+      'unknown': 'default'
+    };
+    
+    // Create a copy of the message with the mapped task type
+    const mappedMessage = {
+      ...message,
+      taskType: taskTypeMapping[message.taskType] || 'default'
+    };
+    
+    console.log('[Focus Nudge] Mapped task type:', message.taskType, '->', mappedMessage.taskType);
+    
+    // Show the task detection alert with the mapped task type
+    showTaskDetectionAlert(mappedMessage);
+    
     sendResponse({ success: true });
   }
 }
@@ -834,16 +858,16 @@ function showTaskDetectionAlert(taskData) {
   console.log('Task detection alert:', taskData);
   
   // Check if Focus Companion is already loaded
-  if (window.focusCompanion) {
+  if (window._focusCompanionInstance) {
     // Use the Focus Companion to show the task detection
-    window.focusCompanion.showTaskDetection(taskData);
+    window._focusCompanionInstance.showTaskDetection(taskData);
     return;
   }
   
   // If Focus Companion is not loaded, load it
-  loadFocusCompanion().then(() => {
+  loadFocusCompanion().then((focusCompanion) => {
     // Use the Focus Companion to show the task detection
-    window.focusCompanion.showTaskDetection(taskData);
+    focusCompanion.showTaskDetection(taskData);
   }).catch(error => {
     console.error('[Focus Nudge] Error loading Focus Companion:', error);
     
@@ -862,17 +886,15 @@ function loadFocusCompanion() {
       console.log('[Focus Nudge] Starting to load Focus Companion...');
       
       // Check if already loaded
-      if (window.focusCompanion) {
+      if (window._focusCompanionInstance) {
         console.log('[Focus Nudge] Focus Companion already loaded, reusing existing instance');
-        resolve();
+        resolve(window._focusCompanionInstance);
         return;
       }
       
       // Log the URLs we're trying to load
       const cssUrl = chrome.runtime.getURL('src/ui/focus-companion.css');
-      const jsUrl = chrome.runtime.getURL('src/ui/focus-companion.js');
       console.log('[Focus Nudge] Loading CSS from:', cssUrl);
-      console.log('[Focus Nudge] Loading JS from:', jsUrl);
       
       // Load CSS
       const link = document.createElement('link');
@@ -882,41 +904,37 @@ function loadFocusCompanion() {
       document.head.appendChild(link);
       console.log('[Focus Nudge] CSS link added to document head');
       
-      // Create script element
-      const script = document.createElement('script');
-      script.type = 'module';
-      
-      // Set script content
-      script.textContent = `
-        console.log('[Focus Nudge] Importing Focus Companion module...');
-        import focusCompanion from '${jsUrl}';
-        console.log('[Focus Nudge] Focus Companion module imported:', focusCompanion);
-        window.focusCompanion = focusCompanion;
-        console.log('[Focus Nudge] Focus Companion assigned to window object');
-        document.dispatchEvent(new CustomEvent('focus-companion-loaded'));
-      `;
-      
-      // Add to document
-      document.head.appendChild(script);
-      console.log('[Focus Nudge] Script element added to document head');
+      // Import the direct loader module
+      import(chrome.runtime.getURL('src/ui/focus-companion-direct.js'))
+        .then(module => {
+          console.log('[Focus Nudge] Focus Companion direct module imported:', module);
+          
+          // Initialize the Focus Companion directly in the content script context
+          const focusCompanionInstance = module.initializeFocusCompanion();
+          console.log('[Focus Nudge] Focus Companion initialized:', focusCompanionInstance);
+          
+          // Store the instance for future use
+          window._focusCompanionInstance = focusCompanionInstance;
+          
+          // Dispatch a custom event to signal that the Focus Companion is loaded
+          document.dispatchEvent(new CustomEvent('focus-companion-loaded'));
+          
+          resolve(focusCompanionInstance);
+        })
+        .catch(error => {
+          console.error('[Focus Nudge] Error importing Focus Companion direct module:', error);
+          reject(error);
+        });
       
       // Listen for load event
       document.addEventListener('focus-companion-loaded', () => {
         console.log('[Focus Nudge] Focus Companion loaded successfully');
-        console.log('[Focus Nudge] Focus Companion object:', window.focusCompanion);
-        
-        // Check if the DOM elements were created
-        const companionElement = document.querySelector('.focus-companion');
-        const statusIndicator = document.querySelector('.focus-status-indicator');
-        console.log('[Focus Nudge] Companion element exists:', !!companionElement);
-        console.log('[Focus Nudge] Status indicator exists:', !!statusIndicator);
-        
-        resolve();
+        console.log('[Focus Nudge] Focus Companion instance:', window._focusCompanionInstance);
       }, { once: true });
       
       // Set timeout for loading
       setTimeout(() => {
-        if (!window.focusCompanion) {
+        if (!window._focusCompanionInstance) {
           console.error('[Focus Nudge] Focus Companion loading timed out');
           console.error('[Focus Nudge] Document head contents:', document.head.innerHTML);
           reject(new Error('Focus Companion loading timed out'));

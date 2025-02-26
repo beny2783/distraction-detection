@@ -16,6 +16,8 @@ class FocusCompanion {
     this.currentTask = null;
     this.previousTask = null;
     this.isVisible = false;
+    
+    // Default expressions with relative paths - these will be updated by the direct loader
     this.expressions = {
       idle: '../assets/companion/companion.svg',
       happy: '../assets/companion/companion-happy.svg',
@@ -58,6 +60,7 @@ class FocusCompanion {
     // Create main container
     this.container = document.createElement('div');
     this.container.className = 'focus-companion';
+    this.container.setAttribute('data-extension-element', 'true');
     
     // Create avatar
     this.avatar = document.createElement('div');
@@ -71,6 +74,7 @@ class FocusCompanion {
     // Create status indicator
     this.statusIndicator = document.createElement('div');
     this.statusIndicator.className = 'focus-status-indicator';
+    this.statusIndicator.setAttribute('data-extension-element', 'true');
     this.statusIndicator.innerHTML = '<div class="status-icon">🔍</div>';
     
     // Add elements to container
@@ -78,14 +82,48 @@ class FocusCompanion {
     this.container.appendChild(this.bubble);
     
     // Add elements to document
-    document.body.appendChild(this.container);
-    document.body.appendChild(this.statusIndicator);
+    this.appendToShadowDOM();
     
     console.log('[Focus Companion] UI elements created and added to document');
     console.log('[Focus Companion] Container:', this.container);
     console.log('[Focus Companion] Avatar:', this.avatar);
     console.log('[Focus Companion] Bubble:', this.bubble);
     console.log('[Focus Companion] Status Indicator:', this.statusIndicator);
+  }
+  
+  /**
+   * Append elements to Shadow DOM to avoid CSS conflicts with the page
+   */
+  appendToShadowDOM() {
+    // Create a shadow host
+    const shadowHost = document.createElement('div');
+    shadowHost.id = 'focus-companion-shadow-host';
+    shadowHost.style.cssText = 'position: fixed; z-index: 2147483647; bottom: 0; right: 0; width: 0; height: 0;';
+    document.body.appendChild(shadowHost);
+    
+    // Create shadow root
+    const shadowRoot = shadowHost.attachShadow({ mode: 'open' });
+    
+    // Add CSS to shadow root
+    const style = document.createElement('style');
+    style.textContent = `
+      /* Import the CSS from the extension */
+      @import url('${chrome.runtime.getURL('src/ui/focus-companion.css')}');
+      
+      /* Additional styles for shadow DOM */
+      :host {
+        all: initial;
+      }
+    `;
+    shadowRoot.appendChild(style);
+    
+    // Add container and status indicator to shadow root
+    shadowRoot.appendChild(this.container);
+    shadowRoot.appendChild(this.statusIndicator);
+    
+    // Store shadow root for future reference
+    this.shadowRoot = shadowRoot;
+    this.shadowHost = shadowHost;
   }
   
   /**
@@ -122,16 +160,34 @@ class FocusCompanion {
     const imagePath = this.expressions[expression];
     console.log(`[Focus Companion] Using image path: ${imagePath}`);
     
+    // Always ensure we're using an absolute URL
+    let finalImagePath = imagePath;
+    if (!imagePath.startsWith('chrome-extension://') && !imagePath.startsWith('http')) {
+      // If it's a relative path, convert to absolute using chrome.runtime.getURL
+      const assetName = expression === 'idle' ? 'companion' : `companion-${expression}`;
+      finalImagePath = chrome.runtime.getURL(`assets/companion/${assetName}.svg`);
+      console.log(`[Focus Companion] Converted relative path to absolute: ${finalImagePath}`);
+    }
+    
     this.currentState = expression;
-    this.avatar.innerHTML = `<img src="${imagePath}" alt="Focus Companion" />`;
+    this.avatar.innerHTML = `<img src="${finalImagePath}" alt="Focus Companion" />`;
     
     // Check if the image loaded correctly
     setTimeout(() => {
       const img = this.avatar.querySelector('img');
       if (img) {
         console.log(`[Focus Companion] Image element created:`, img);
-        img.onerror = () => console.error(`[Focus Companion] Failed to load image: ${imagePath}`);
-        img.onload = () => console.log(`[Focus Companion] Successfully loaded image: ${imagePath}`);
+        img.onerror = () => {
+          console.error(`[Focus Companion] Failed to load image: ${finalImagePath}`);
+          // Try to use chrome.runtime.getURL as a fallback
+          if (!finalImagePath.startsWith('chrome-extension://')) {
+            const assetName = expression === 'idle' ? 'companion' : `companion-${expression}`;
+            const fallbackPath = chrome.runtime.getURL(`assets/companion/${assetName}.svg`);
+            console.log(`[Focus Companion] Trying fallback path: ${fallbackPath}`);
+            img.src = fallbackPath;
+          }
+        };
+        img.onload = () => console.log(`[Focus Companion] Successfully loaded image: ${finalImagePath}`);
       } else {
         console.error(`[Focus Companion] No image element found in avatar`);
       }
@@ -189,15 +245,24 @@ class FocusCompanion {
     // Set appropriate expression
     this.setExpression('thinking');
     
+    // Get task name and message
+    const taskName = this.getTaskName(taskData.taskType);
+    const taskMessage = this.getTaskMessage(taskData.taskType);
+    const taskIcon = this.getTaskIcon(taskData.taskType);
+    
+    // Log the task details for debugging
+    console.log(`[Focus Companion] Displaying task: ${taskData.taskType} (${taskName})`);
+    console.log(`[Focus Companion] Task message: ${taskMessage}`);
+    
     // Create bubble content
     this.bubble.innerHTML = `
       <div class="bubble-header">
-        <span class="task-icon">${this.getTaskIcon(taskData.taskType)}</span>
-        <span class="task-name">${this.getTaskName(taskData.taskType)}</span>
+        <span class="task-icon">${taskIcon}</span>
+        <span class="task-name">${taskName}</span>
         <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
       </div>
       <div class="bubble-content">
-        ${this.getTaskMessage(taskData.taskType)}
+        ${taskMessage}
       </div>
       <div class="bubble-actions">
         <button class="action-button primary" id="enable-task-mode">Enable</button>
@@ -207,17 +272,31 @@ class FocusCompanion {
     `;
     
     // Add event listeners to buttons
-    document.getElementById('enable-task-mode').addEventListener('click', () => {
-      this.enableTaskMode(taskData);
-    });
-    
-    document.getElementById('dismiss-task').addEventListener('click', () => {
-      this.dismissTask();
-    });
-    
-    document.getElementById('task-settings').addEventListener('click', () => {
-      this.openTaskSettings();
-    });
+    setTimeout(() => {
+      // Use the shadow root to find the buttons
+      const root = this.shadowRoot || document;
+      const enableButton = root.getElementById('enable-task-mode');
+      const dismissButton = root.getElementById('dismiss-task');
+      const settingsButton = root.getElementById('task-settings');
+      
+      if (enableButton) {
+        enableButton.addEventListener('click', () => {
+          this.enableTaskMode(taskData);
+        });
+      }
+      
+      if (dismissButton) {
+        dismissButton.addEventListener('click', () => {
+          this.dismissTask();
+        });
+      }
+      
+      if (settingsButton) {
+        settingsButton.addEventListener('click', () => {
+          this.openTaskSettings();
+        });
+      }
+    }, 100);
     
     // Show the companion
     this.show();
@@ -579,7 +658,11 @@ class FocusCompanion {
     
     // Add event listener to button
     setTimeout(() => {
-      const button = document.getElementById('welcome-got-it');
+      // Use the shadow root to find the button
+      const button = this.shadowRoot ? 
+        this.shadowRoot.getElementById('welcome-got-it') : 
+        document.getElementById('welcome-got-it');
+        
       if (button) {
         console.log('[Focus Companion] Welcome button found, adding event listener');
         button.addEventListener('click', () => {
