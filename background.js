@@ -8,6 +8,7 @@
 import { EVENT_TYPES } from './src/events/schema.js';
 import { storeEvents, getEvents } from './src/events/storage.js';
 import ModelManager from './models/ModelManager.js';
+import { detectTask, getTaskSpecificNudges, TASK_TYPES } from './src/features/taskDetection.js';
 
 // Configuration
 const CONFIG = {
@@ -16,6 +17,7 @@ const CONFIG = {
   eventProcessingInterval: 5000,            // Process events every 5 seconds
   maxEventsPerProcessing: 1000,             // Maximum events to process at once
   distractionScoreInterval: 5 * 60 * 1000,  // Calculate distraction score every 5 minutes
+  taskDetectionInterval: 2 * 60 * 1000,     // Detect tasks every 2 minutes
   debugMode: true                           // Enable debug logging
 };
 
@@ -28,7 +30,9 @@ let userPreferences = {
   focusModeStartTime: null,
   focusModeEndTime: null,
   distractionThreshold: 0.7,
-  allowedSites: []
+  allowedSites: [],
+  taskDetectionEnabled: true,
+  taskSpecificNudgesEnabled: true
 };
 
 let sessionData = {};
@@ -39,6 +43,12 @@ let eventQueue = [];
 let eventProcessorTimer = null;
 let modelManager = null;
 let distractionScores = []; // Array to store periodic distraction scores
+let currentDetectedTask = {
+  taskType: TASK_TYPES.UNKNOWN,
+  confidence: 0,
+  detectionMethod: 'initial',
+  lastUpdated: 0
+};
 
 /**
  * Initialize the background script
@@ -83,6 +93,11 @@ async function initialize() {
       periodInMinutes: CONFIG.distractionScoreInterval / (60 * 1000)
     });
     
+    // Set up alarm for periodic task detection
+    chrome.alarms.create('taskDetection', {
+      periodInMinutes: CONFIG.taskDetectionInterval / (60 * 1000)
+    });
+    
     if (CONFIG.debugMode) {
       console.log('Focus Nudge: Background script initialized');
     }
@@ -114,7 +129,7 @@ function setupEventListeners() {
 }
 
 /**
- * Handle messages from content scripts
+ * Handle messages from content scripts and popup
  */
 async function handleMessage(message, sender, sendResponse) {
   try {
@@ -122,96 +137,83 @@ async function handleMessage(message, sender, sendResponse) {
     console.log(`[Focus Nudge] Received message type: ${message.type} from tab ${tabId}`, message);
     
     switch (message.type) {
-      case 'GET_TAB_INFO':
-        sendResponse({ tabId, url: sender.tab?.url });
-        break;
+      case 'TRACK_EVENT':
+        // Track event
+        const event = {
+          event_type: message.eventType,
+          payload: message.payload,
+          url: message.url,
+          timestamp: message.timestamp,
+          tab_id: tabId,
+          session_id: getSessionIdForTab(tabId),
+          sequence_id: getNextSequenceId(tabId)
+        };
         
-      case 'GET_EVENT_STREAM_FUNCTIONS':
-        // Content script is requesting event stream functions
-        // We'll just acknowledge the request since we're handling events directly
-        console.log('[Focus Nudge] Content script requested event stream functions');
+        // Add to event queue
+        eventQueue.push(event);
+        
         sendResponse({ success: true });
         break;
         
-      case 'TRACK_EVENT':
-        // Content script is sending an event to track
-        if (message.eventType && EVENT_TYPES[message.eventType]) {
-          console.log(`[Focus Nudge] Processing event: ${message.eventType}`);
-          const event = {
-            event_type: message.eventType,
-            payload: message.payload || {},
-            timestamp: message.timestamp || Date.now(),
-            url: message.url || sender.tab?.url || '',
-            tab_id: tabId || 0,
-            session_id: getSessionIdForTab(tabId),
-            sequence_id: getNextSequenceId(tabId)
-          };
-          
-          // Add to event queue
-          eventQueue.push(event);
-          console.log(`[Focus Nudge] Added event to queue. Queue size: ${eventQueue.length}`);
-          
-          // Process immediately if it's an important event
-          const importantEvents = ['PAGE_VISIT', 'PAGE_EXIT', 'VIDEO_PLAY', 'VIDEO_PAUSE'];
-          if (importantEvents.includes(message.eventType)) {
-            console.log(`[Focus Nudge] Important event detected. Processing queue immediately.`);
-            processEventQueue();
-          }
-          
-          sendResponse({ success: true });
-        } else {
-          console.error(`[Focus Nudge] Invalid event type: ${message.eventType}`);
-          sendResponse({ success: false, error: 'Invalid event type' });
-        }
-        break;
-        
       case 'FLUSH_EVENTS':
-        // Content script is requesting to flush events
+        // Flush events
         await processEventQueue();
         sendResponse({ success: true });
         break;
         
-      case 'CLEANUP_EVENTS':
-        // Content script is cleaning up
-        // Nothing special to do here, just acknowledge
-        sendResponse({ success: true });
+      case 'GET_EVENT_STREAM_FUNCTIONS':
+        // Return event stream functions
+        sendResponse({
+          success: true,
+          functions: {
+            trackEvent: true,
+            flushEvents: true,
+            cleanup: true
+          }
+        });
         break;
         
-      case 'STREAM_EVENTS':
-        // Legacy event streaming - handle for backward compatibility
-        if (message.events && Array.isArray(message.events)) {
-          eventQueue.push(...message.events);
-          sendResponse({ success: true });
+      case 'get_model_info':
+        // Return model info
+        if (modelManager) {
+          sendResponse({
+            type: modelManager.getActiveModelType(),
+            version: modelManager.getActiveModelVersion()
+          });
         } else {
-          sendResponse({ success: false, error: 'Invalid events data' });
+          sendResponse(null);
         }
         break;
         
-      case 'GET_USER_PREFERENCES':
-        // Get user preferences
-        sendResponse({ preferences: userPreferences });
+      case 'set_model_type':
+        // Set model type
+        if (modelManager && message.modelType) {
+          const success = modelManager.setActiveModelType(message.modelType);
+          sendResponse({
+            success,
+            modelInfo: {
+              type: modelManager.getActiveModelType(),
+              version: modelManager.getActiveModelVersion()
+            }
+          });
+        } else {
+          sendResponse({ success: false });
+        }
         break;
         
-      case 'UPDATE_USER_PREFERENCES':
-        // Update user preferences
+      case 'update_preferences':
+        // Update preferences
         if (message.preferences) {
           userPreferences = { ...userPreferences, ...message.preferences };
-          await chrome.storage.sync.set({ userPreferences });
           sendResponse({ success: true });
         } else {
-          sendResponse({ success: false, error: 'No preferences provided' });
+          sendResponse({ success: false });
         }
         break;
         
-      case 'GET_SESSION_DATA':
-        // Get session data
-        sendResponse({ sessionData });
-        break;
-        
-      case 'CLEAR_SESSION_DATA':
-        // Clear session data
-        sessionData = {};
-        await chrome.storage.local.set({ sessionData });
+      case 'TRIGGER_TASK_DETECTION':
+        // Manually trigger task detection
+        await detectCurrentTask();
         sendResponse({ success: true });
         break;
         
@@ -304,6 +306,11 @@ async function handleAlarm(alarm) {
     } else if (alarm.name === 'distractionScore') {
       // Calculate distraction scores
       await calculateDistractionScores();
+    } else if (alarm.name === 'taskDetection') {
+      // Detect current task
+      if (userPreferences.taskDetectionEnabled) {
+        await detectCurrentTask();
+      }
     }
   } catch (error) {
     console.error('Error handling alarm:', error);
@@ -469,6 +476,13 @@ async function processEventQueue() {
     await processEvents(eventsToProcess);
     
     console.log(`[Focus Nudge] Processed ${eventsToProcess.length} events, ${eventQueue.length} remaining`);
+    
+    // After processing events, check if task detection is due
+    const now = Date.now();
+    if (userPreferences.taskDetectionEnabled && 
+        (now - currentDetectedTask.lastUpdated) > CONFIG.taskDetectionInterval) {
+      await detectCurrentTask();
+    }
   } catch (error) {
     console.error('[Focus Nudge] Error processing event queue:', error);
   }
@@ -767,6 +781,14 @@ function generateNudge(domain, prediction) {
         message = `You've spent ${formatTime(domainData.totalTimeSpent)} on ${domain} today.`;
     }
     
+    // If task-specific nudges are enabled and we have a detected task with good confidence,
+    // use task-specific nudges
+    if (userPreferences.taskSpecificNudgesEnabled && 
+        currentDetectedTask.taskType !== TASK_TYPES.UNKNOWN &&
+        currentDetectedTask.confidence >= 0.7) {
+      return generateTaskSpecificNudge(domain, prediction, currentDetectedTask);
+    }
+    
     return {
       type: nudgeType,
       message: message,
@@ -826,6 +848,28 @@ function generateSuggestionNudge(domain, domainData) {
 }
 
 /**
+ * Generate a task-specific nudge
+ * @param {string} domain - Website domain
+ * @param {Object} prediction - Prediction object from model
+ * @param {Object} detectedTask - Detected task object
+ * @returns {Object} Nudge object
+ */
+function generateTaskSpecificNudge(domain, prediction, detectedTask) {
+  // Get task-specific nudges
+  const nudges = getTaskSpecificNudges(detectedTask.taskType);
+  const randomNudge = nudges[Math.floor(Math.random() * nudges.length)];
+  
+  return {
+    type: 'task_specific',
+    title: `${formatTaskType(detectedTask.taskType)} Focus`,
+    message: randomNudge,
+    taskType: detectedTask.taskType,
+    distractionScore: prediction.distraction_score,
+    timestamp: Date.now()
+  };
+}
+
+/**
  * Send nudge to tab
  */
 async function sendNudgeToTab(tabId, nudge) {
@@ -867,6 +911,176 @@ function formatTime(milliseconds) {
   }
   
   return `${hours} hour${hours === 1 ? '' : 's'} and ${remainingMinutes} minute${remainingMinutes === 1 ? '' : 's'}`;
+}
+
+/**
+ * Detect the current task based on recent events
+ */
+async function detectCurrentTask() {
+  try {
+    // Get recent events for the active tab
+    if (!activeTabId) {
+      if (CONFIG.debugMode) {
+        console.log('Focus Nudge: No active tab for task detection');
+      }
+      return;
+    }
+    
+    const sessionId = getSessionIdForTab(activeTabId);
+    if (!sessionId) {
+      if (CONFIG.debugMode) {
+        console.log('Focus Nudge: No session ID for active tab');
+      }
+      return;
+    }
+    
+    // Get recent events for this session
+    const recentEvents = await getEvents({
+      sessionId: sessionId,
+      limit: 100,
+      sortDirection: 'desc'
+    });
+    
+    if (!recentEvents || recentEvents.length === 0) {
+      if (CONFIG.debugMode) {
+        console.log('Focus Nudge: No recent events for task detection');
+      }
+      return;
+    }
+    
+    // Detect task
+    const taskDetection = detectTask(recentEvents);
+    
+    // Update current detected task if confidence is higher or if it's a different task with good confidence
+    const shouldUpdateTask = 
+      taskDetection.confidence > currentDetectedTask.confidence ||
+      (taskDetection.taskType !== currentDetectedTask.taskType && 
+       taskDetection.confidence >= 0.7);
+    
+    if (shouldUpdateTask) {
+      const previousTask = { ...currentDetectedTask };
+      
+      // Update current task
+      currentDetectedTask = {
+        ...taskDetection,
+        lastUpdated: Date.now()
+      };
+      
+      // Log task change
+      if (CONFIG.debugMode) {
+        console.log(`Focus Nudge: Task detected - ${taskDetection.taskType} (${taskDetection.confidence.toFixed(2)})`);
+        console.log('Focus Nudge: Task detection evidence:', taskDetection.evidence);
+      }
+      
+      // If task type changed and task-specific nudges are enabled, send a task change notification
+      if (previousTask.taskType !== TASK_TYPES.UNKNOWN && 
+          taskDetection.taskType !== previousTask.taskType &&
+          userPreferences.taskSpecificNudgesEnabled) {
+        sendTaskChangeNotification(previousTask.taskType, taskDetection.taskType);
+      }
+      
+      // Store task detection in session data
+      if (!sessionData[sessionId]) {
+        sessionData[sessionId] = {};
+      }
+      
+      sessionData[sessionId].detectedTask = currentDetectedTask;
+      
+      // Save session data
+      await chrome.storage.local.set({ sessionData });
+      
+      // For testing: Send a direct notification to the content script for job search detection
+      if (taskDetection.taskType === TASK_TYPES.JOB_SEARCH && taskDetection.confidence >= 0.5) {
+        try {
+          await chrome.tabs.sendMessage(activeTabId, {
+            type: 'TASK_DETECTED',
+            taskType: taskDetection.taskType,
+            confidence: taskDetection.confidence,
+            detectionMethod: taskDetection.detectionMethod,
+            evidence: taskDetection.evidence
+          });
+          
+          if (CONFIG.debugMode) {
+            console.log('Focus Nudge: Sent job search detection alert to content script');
+          }
+        } catch (error) {
+          console.error('Focus Nudge: Error sending task detection alert:', error);
+        }
+      }
+    }
+    
+    // Always send a notification for job search detection during manual testing,
+    // even if the task hasn't changed
+    if (taskDetection.taskType === TASK_TYPES.JOB_SEARCH && taskDetection.confidence >= 0.5) {
+      try {
+        await chrome.tabs.sendMessage(activeTabId, {
+          type: 'TASK_DETECTED',
+          taskType: taskDetection.taskType,
+          confidence: taskDetection.confidence,
+          detectionMethod: taskDetection.detectionMethod,
+          evidence: taskDetection.evidence
+        });
+        
+        if (CONFIG.debugMode) {
+          console.log('Focus Nudge: Sent job search detection alert to content script');
+        }
+      } catch (error) {
+        console.error('Focus Nudge: Error sending task detection alert:', error);
+      }
+    }
+  } catch (error) {
+    console.error('Focus Nudge: Error detecting task:', error);
+  }
+}
+
+/**
+ * Send a notification about task change
+ * @param {string} previousTaskType - Previous task type
+ * @param {string} newTaskType - New task type
+ */
+async function sendTaskChangeNotification(previousTaskType, newTaskType) {
+  try {
+    // Only send notification if active tab exists
+    if (!activeTabId) {
+      return;
+    }
+    
+    // Get task-specific nudge for the new task
+    const nudges = getTaskSpecificNudges(newTaskType);
+    const randomNudge = nudges[Math.floor(Math.random() * nudges.length)];
+    
+    // Create task change nudge
+    const taskChangeNudge = {
+      type: 'task_change',
+      title: `Detected: ${formatTaskType(newTaskType)}`,
+      message: randomNudge,
+      taskType: newTaskType,
+      previousTaskType: previousTaskType,
+      timestamp: Date.now()
+    };
+    
+    // Send nudge to tab
+    await sendNudgeToTab(activeTabId, taskChangeNudge);
+    
+    if (CONFIG.debugMode) {
+      console.log(`Focus Nudge: Sent task change nudge for ${newTaskType}`);
+    }
+  } catch (error) {
+    console.error('Focus Nudge: Error sending task change notification:', error);
+  }
+}
+
+/**
+ * Format task type for display
+ * @param {string} taskType - Task type from TASK_TYPES
+ * @returns {string} Formatted task type
+ */
+function formatTaskType(taskType) {
+  // Convert from snake_case to Title Case
+  return taskType
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 // Initialize the background script

@@ -233,22 +233,112 @@
       margin-top: 5px;
       font-style: italic;
     }
+    
+    .task-detection {
+      background-color: #f9f9f9;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 15px;
+    }
+    
+    .task-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+    }
+    
+    .task-label {
+      font-size: 13px;
+      color: #666;
+    }
+    
+    .task-value {
+      font-weight: 500;
+      font-size: 14px;
+    }
+    
+    .high-confidence {
+      color: #2ecc71;
+    }
+    
+    .medium-confidence {
+      color: #f39c12;
+    }
+    
+    .low-confidence {
+      color: #e74c3c;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Focus Nudge</h1>
-    <p>Stay on track with gentle reminders</p>
+    <p>Stay focused and minimize distractions</p>
   </div>
   
   <div class="container">
+    <!-- Current Status Section -->
+    <div class="section">
+      <div class="section-title">Current Status</div>
+      <div class="status-container">
+        <div class="status-item">
+          <div class="status-label">Distraction Score</div>
+          <div class="status-value" id="current-distraction-score">0%</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Distractions Today</div>
+          <div class="status-value" id="distraction-count">0</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Nudges Shown</div>
+          <div class="status-value" id="nudge-count">0</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Task Detection Section -->
+    <div class="section task-detection">
+      <div class="section-title">Detected Task</div>
+      <div class="task-info">
+        <div class="task-label">Current Task:</div>
+        <div class="task-value" id="detected-task">Unknown</div>
+      </div>
+      <div class="task-info">
+        <div class="task-label">Confidence:</div>
+        <div class="task-value" id="task-confidence">0%</div>
+      </div>
+      <div class="task-actions" style="margin-top: 10px; text-align: center;">
+        <button id="test-detection-button" style="padding: 5px 10px; background-color: #f0f0f0; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px;">
+          Test Detection Now
+        </button>
+      </div>
+    </div>
+    
+    <!-- Settings Section -->
     <div class="section">
       <div class="section-title">Settings</div>
       
       <div class="toggle-container">
-        <span class="toggle-label">Enable Nudging</span>
+        <div class="toggle-label">Enable Nudging</div>
         <label class="toggle">
           <input type="checkbox" id="nudging-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      
+      <div class="toggle-container">
+        <div class="toggle-label">Task Detection</div>
+        <label class="toggle">
+          <input type="checkbox" id="task-detection-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      
+      <div class="toggle-container">
+        <div class="toggle-label">Task-Specific Nudges</div>
+        <label class="toggle">
+          <input type="checkbox" id="task-specific-nudges-toggle" checked>
           <span class="slider"></span>
         </label>
       </div>

@@ -577,4 +577,263 @@ function capturePageMetadata() {
     pageContent: document.body.innerText.substring(0, CONFIG.contentSampleLength),
     pageLoadTime: pageLoadTime
   };
-} 
+}
+
+/**
+ * Handle messages from the background script
+ * @param {Object} message - Message object
+ * @param {Object} sender - Sender information
+ * @param {Function} sendResponse - Function to send response
+ */
+function handleMessage(message, sender, sendResponse) {
+  if (message.type === 'SHOW_NUDGE') {
+    showNudge(message.nudge);
+    sendResponse({ success: true });
+  } else if (message.type === 'GET_PAGE_CONTENT') {
+    const pageContent = document.body.innerText.substring(0, 5000);
+    sendResponse({ success: true, pageContent });
+  } else if (message.type === 'TASK_DETECTED') {
+    // Handle task detection events
+    if (message.taskType === 'job_search') {
+      showTaskDetectionAlert(message);
+    }
+    sendResponse({ success: true });
+  }
+}
+
+/**
+ * Show a nudge to the user
+ * @param {Object} nudge - Nudge object
+ */
+function showNudge(nudge) {
+  // Create nudge container if it doesn't exist
+  let nudgeContainer = document.getElementById('focus-nudge-container');
+  
+  if (!nudgeContainer) {
+    nudgeContainer = document.createElement('div');
+    nudgeContainer.id = 'focus-nudge-container';
+    nudgeContainer.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 9999;
+      width: 300px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    `;
+    document.body.appendChild(nudgeContainer);
+  }
+  
+  // Create nudge element
+  const nudgeElement = document.createElement('div');
+  nudgeElement.className = 'focus-nudge';
+  nudgeElement.style.cssText = `
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    margin-top: 10px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    opacity: 0;
+    transform: translateY(20px);
+  `;
+  
+  // Add task-specific styling if applicable
+  if (nudge.type === 'task_specific' || nudge.type === 'task_change') {
+    nudgeElement.classList.add('task-specific-nudge');
+  }
+  
+  // Create nudge header
+  const nudgeHeader = document.createElement('div');
+  nudgeHeader.className = 'focus-nudge-header';
+  nudgeHeader.style.cssText = `
+    padding: 12px 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #eee;
+  `;
+  
+  // Set header background color based on nudge type
+  if (nudge.type === 'task_specific') {
+    nudgeHeader.style.background = 'linear-gradient(135deg, #4CAF50, #8BC34A)';
+    nudgeHeader.style.color = 'white';
+  } else if (nudge.type === 'task_change') {
+    nudgeHeader.style.background = 'linear-gradient(135deg, #3498db, #2980b9)';
+    nudgeHeader.style.color = 'white';
+  } else {
+    nudgeHeader.style.background = 'linear-gradient(135deg, #6e8efb, #a777e3)';
+    nudgeHeader.style.color = 'white';
+  }
+  
+  // Create title
+  const title = document.createElement('div');
+  title.className = 'focus-nudge-title';
+  title.textContent = nudge.title;
+  title.style.cssText = `
+    font-weight: 500;
+    font-size: 14px;
+  `;
+  
+  // Create close button
+  const closeButton = document.createElement('button');
+  closeButton.className = 'focus-nudge-close';
+  closeButton.innerHTML = '&times;';
+  closeButton.style.cssText = `
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    cursor: pointer;
+    opacity: 0.8;
+    padding: 0;
+    margin: 0;
+  `;
+  
+  // Add close button event listener
+  closeButton.addEventListener('click', () => {
+    nudgeElement.style.opacity = '0';
+    nudgeElement.style.transform = 'translateY(20px)';
+    
+    setTimeout(() => {
+      nudgeContainer.removeChild(nudgeElement);
+    }, 300);
+  });
+  
+  // Add title and close button to header
+  nudgeHeader.appendChild(title);
+  nudgeHeader.appendChild(closeButton);
+  
+  // Create nudge content
+  const nudgeContent = document.createElement('div');
+  nudgeContent.className = 'focus-nudge-content';
+  nudgeContent.style.cssText = `
+    padding: 15px;
+    font-size: 13px;
+    color: #333;
+  `;
+  
+  // Create message
+  const message = document.createElement('p');
+  message.className = 'focus-nudge-message';
+  message.textContent = nudge.message;
+  message.style.cssText = `
+    margin: 0 0 10px 0;
+    line-height: 1.4;
+  `;
+  
+  // Add task-specific information if applicable
+  if (nudge.type === 'task_change') {
+    const taskInfo = document.createElement('div');
+    taskInfo.className = 'focus-nudge-task-info';
+    taskInfo.style.cssText = `
+      font-size: 12px;
+      color: #666;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
+    `;
+    
+    taskInfo.textContent = `Switched from ${formatTaskType(nudge.previousTaskType)} to ${formatTaskType(nudge.taskType)}`;
+    nudgeContent.appendChild(taskInfo);
+  }
+  
+  // Add message to content
+  nudgeContent.appendChild(message);
+  
+  // Add header and content to nudge
+  nudgeElement.appendChild(nudgeHeader);
+  nudgeElement.appendChild(nudgeContent);
+  
+  // Add nudge to container
+  nudgeContainer.appendChild(nudgeElement);
+  
+  // Animate nudge in
+  setTimeout(() => {
+    nudgeElement.style.opacity = '1';
+    nudgeElement.style.transform = 'translateY(0)';
+  }, 10);
+  
+  // Auto-remove nudge after 10 seconds
+  setTimeout(() => {
+    if (nudgeContainer.contains(nudgeElement)) {
+      nudgeElement.style.opacity = '0';
+      nudgeElement.style.transform = 'translateY(20px)';
+      
+      setTimeout(() => {
+        if (nudgeContainer.contains(nudgeElement)) {
+          nudgeContainer.removeChild(nudgeElement);
+        }
+      }, 300);
+    }
+  }, 10000);
+}
+
+/**
+ * Format task type for display
+ * @param {string} taskType - Task type
+ * @returns {string} Formatted task type
+ */
+function formatTaskType(taskType) {
+  return taskType
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Show a simple alert when job searching is detected (for testing purposes)
+ * @param {Object} taskData - Task detection data
+ */
+function showTaskDetectionAlert(taskData) {
+  console.log('Task detection alert:', taskData);
+  
+  // Create alert container
+  const alertContainer = document.createElement('div');
+  alertContainer.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #4CAF50;
+    color: white;
+    padding: 15px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `;
+  
+  // Create icon
+  const icon = document.createElement('div');
+  icon.innerHTML = '🔍';
+  icon.style.fontSize = '20px';
+  
+  // Create message
+  const message = document.createElement('div');
+  message.innerHTML = `
+    <strong>Job Search Detected!</strong><br>
+    Confidence: ${Math.round(taskData.confidence * 100)}%<br>
+    Method: ${taskData.detectionMethod}
+  `;
+  
+  // Add elements to container
+  alertContainer.appendChild(icon);
+  alertContainer.appendChild(message);
+  
+  // Add to document
+  document.body.appendChild(alertContainer);
+  
+  // Remove after 5 seconds
+  setTimeout(() => {
+    if (document.body.contains(alertContainer)) {
+      document.body.removeChild(alertContainer);
+    }
+  }, 5000);
+}
+
+// Set up message listener
+chrome.runtime.onMessage.addListener(handleMessage); 

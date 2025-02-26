@@ -15,13 +15,19 @@ const distractionCountElement = document.getElementById('distraction-count');
 const nudgeCountElement = document.getElementById('nudge-count');
 const topDistractionElement = document.getElementById('top-distraction');
 const currentDistractionScoreElement = document.getElementById('current-distraction-score');
+const taskDetectionToggle = document.getElementById('task-detection-toggle');
+const taskSpecificNudgesToggle = document.getElementById('task-specific-nudges-toggle');
+const detectedTaskElement = document.getElementById('detected-task');
+const taskConfidenceElement = document.getElementById('task-confidence');
 
 // User preferences
 let userPreferences = {
   nudgingEnabled: true,
   nudgeSensitivity: 'medium',
   focusGoal: '',
-  modelType: 'random-forest'
+  modelType: 'random-forest',
+  taskDetectionEnabled: true,
+  taskSpecificNudgesEnabled: true
 };
 
 // Stats
@@ -30,7 +36,11 @@ let stats = {
   nudgeCount: 0,
   topDistraction: 'None',
   distractionsByDomain: {},
-  currentDistractionScore: 0
+  currentDistractionScore: 0,
+  currentTask: {
+    taskType: 'unknown',
+    confidence: 0
+  }
 };
 
 // Model info
@@ -56,6 +66,15 @@ const loadData = () => {
       // Set model type
       if (userPreferences.modelType) {
         modelTypeSelect.value = userPreferences.modelType;
+      }
+      
+      // Set task detection toggles
+      if (taskDetectionToggle) {
+        taskDetectionToggle.checked = userPreferences.taskDetectionEnabled !== false;
+      }
+      
+      if (taskSpecificNudgesToggle) {
+        taskSpecificNudgesToggle.checked = userPreferences.taskSpecificNudgesEnabled !== false;
       }
     }
     
@@ -127,6 +146,32 @@ const loadData = () => {
         updateModelInfo();
       }
     });
+    
+    // Get current detected task from active tab's session
+    if (result.sessionData) {
+      // Find the active tab's session
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          const activeTabId = tabs[0].id;
+          
+          // Look for session data with detected task
+          for (const sessionId in result.sessionData) {
+            const session = result.sessionData[sessionId];
+            
+            if (session.tabId === activeTabId && session.detectedTask) {
+              stats.currentTask = {
+                taskType: session.detectedTask.taskType,
+                confidence: session.detectedTask.confidence
+              };
+              
+              // Update task detection UI
+              updateTaskDetectionUI();
+              break;
+            }
+          }
+        }
+      });
+    }
   });
 };
 
@@ -159,6 +204,29 @@ const savePreferences = () => {
       type: 'update_preferences',
       preferences: userPreferences
     });
+  });
+  
+  // Get task detection preferences
+  if (taskDetectionToggle) {
+    userPreferences.taskDetectionEnabled = taskDetectionToggle.checked;
+  }
+  
+  if (taskSpecificNudgesToggle) {
+    userPreferences.taskSpecificNudgesEnabled = taskSpecificNudgesToggle.checked;
+  }
+  
+  // Save preferences
+  chrome.storage.sync.set({ userPreferences }, () => {
+    console.log('Preferences saved');
+    
+    // Show saved message
+    const savedMessage = document.getElementById('saved-message');
+    if (savedMessage) {
+      savedMessage.classList.add('visible');
+      setTimeout(() => {
+        savedMessage.classList.remove('visible');
+      }, 2000);
+    }
   });
 };
 
@@ -215,6 +283,38 @@ document.addEventListener('DOMContentLoaded', () => {
       updateDistractionScoreUI(stats.currentDistractionScore);
     }
   });
+  
+  // Task detection toggle
+  if (taskDetectionToggle) {
+    taskDetectionToggle.addEventListener('change', savePreferences);
+  }
+  
+  // Task-specific nudges toggle
+  if (taskSpecificNudgesToggle) {
+    taskSpecificNudgesToggle.addEventListener('change', savePreferences);
+  }
+  
+  // Test detection button
+  const testDetectionButton = document.getElementById('test-detection-button');
+  if (testDetectionButton) {
+    testDetectionButton.addEventListener('click', () => {
+      // Show loading state
+      testDetectionButton.textContent = 'Detecting...';
+      testDetectionButton.disabled = true;
+      
+      // Send message to background script to trigger task detection
+      chrome.runtime.sendMessage({ type: 'TRIGGER_TASK_DETECTION' }, (response) => {
+        // Reset button state
+        setTimeout(() => {
+          testDetectionButton.textContent = 'Test Detection Now';
+          testDetectionButton.disabled = false;
+          
+          // Reload data to update UI with new detection
+          loadData();
+        }, 1000);
+      });
+    });
+  }
 });
 
 // Update distraction score UI
@@ -232,5 +332,34 @@ const updateDistractionScoreUI = (score) => {
     currentDistractionScoreElement.style.color = '#f39c12'; // Orange for medium distraction
   } else {
     currentDistractionScoreElement.style.color = '#2ecc71'; // Green for low distraction
+  }
+};
+
+/**
+ * Update the task detection UI
+ */
+const updateTaskDetectionUI = () => {
+  if (detectedTaskElement && taskConfidenceElement) {
+    // Format task type for display
+    const formattedTaskType = stats.currentTask.taskType
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+    
+    // Update detected task
+    detectedTaskElement.textContent = formattedTaskType;
+    
+    // Update confidence
+    const confidencePercent = Math.round(stats.currentTask.confidence * 100);
+    taskConfidenceElement.textContent = `${confidencePercent}%`;
+    
+    // Update confidence color
+    if (confidencePercent >= 80) {
+      taskConfidenceElement.className = 'high-confidence';
+    } else if (confidencePercent >= 50) {
+      taskConfidenceElement.className = 'medium-confidence';
+    } else {
+      taskConfidenceElement.className = 'low-confidence';
+    }
   }
 }; 
