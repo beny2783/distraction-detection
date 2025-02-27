@@ -668,6 +668,26 @@ function handleMessage(message, sender, sendResponse) {
     showTaskDetectionAlert(mappedMessage);
     
     sendResponse({ success: true });
+  } else if (message.type === 'FOCUS_MODE_ENDED') {
+    // Handle focus mode ended notification
+    console.log('[Focus Nudge] Focus mode ended:', message);
+    
+    // Show notification using Focus Companion if available
+    if (window._focusCompanionInstance) {
+      window._focusCompanionInstance.showFocusModeEndedNotification(message);
+    } else {
+      // Load Focus Companion if not available
+      loadFocusCompanion().then((focusCompanion) => {
+        focusCompanion.showFocusModeEndedNotification(message);
+      }).catch(error => {
+        console.error('[Focus Nudge] Error loading Focus Companion:', error);
+        
+        // Fallback to simple notification
+        showSimpleNotification('Focus Mode Ended', message.message || 'Your focus session has ended.');
+      });
+    }
+    
+    sendResponse({ success: true });
   }
 }
 
@@ -998,6 +1018,76 @@ function showSimpleTaskAlert(taskData) {
       document.body.removeChild(alertContainer);
     }
   }, 5000);
+}
+
+/**
+ * Show a simple notification when Focus Companion is not available
+ * @param {string} title - Notification title
+ * @param {string} message - Notification message
+ */
+function showSimpleNotification(title, message) {
+  // Create notification element
+  const notificationEl = document.createElement('div');
+  notificationEl.className = 'focus-nudge-notification';
+  notificationEl.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    max-width: 300px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 2147483647;
+    padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+    opacity: 0;
+    transform: translateY(-20px);
+  `;
+  
+  // Set content
+  notificationEl.innerHTML = `
+    <div style="font-weight: bold; margin-bottom: 8px; color: #333;">${title}</div>
+    <div style="color: #666; margin-bottom: 12px;">${message}</div>
+    <button style="background-color: #4a90e2; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; float: right;">Dismiss</button>
+    <div style="clear: both;"></div>
+  `;
+  
+  // Add to document
+  document.body.appendChild(notificationEl);
+  
+  // Show notification with animation
+  setTimeout(() => {
+    notificationEl.style.opacity = '1';
+    notificationEl.style.transform = 'translateY(0)';
+  }, 10);
+  
+  // Add event listener to dismiss button
+  const dismissButton = notificationEl.querySelector('button');
+  dismissButton.addEventListener('click', () => {
+    notificationEl.style.opacity = '0';
+    notificationEl.style.transform = 'translateY(-20px)';
+    
+    // Remove from DOM after animation
+    setTimeout(() => {
+      document.body.removeChild(notificationEl);
+    }, 300);
+  });
+  
+  // Auto-dismiss after 10 seconds
+  setTimeout(() => {
+    if (document.body.contains(notificationEl)) {
+      notificationEl.style.opacity = '0';
+      notificationEl.style.transform = 'translateY(-20px)';
+      
+      // Remove from DOM after animation
+      setTimeout(() => {
+        if (document.body.contains(notificationEl)) {
+          document.body.removeChild(notificationEl);
+        }
+      }, 300);
+    }
+  }, 10000);
 }
 
 // Set up message listener

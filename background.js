@@ -217,6 +217,46 @@ async function handleMessage(message, sender, sendResponse) {
         sendResponse({ success: true });
         break;
         
+      case 'ENABLE_TASK_MODE':
+        // Enable task mode
+        try {
+          console.log('[Focus Nudge] Enabling task mode:', message);
+          
+          // Update user preferences
+          userPreferences.taskSpecificNudgesEnabled = true;
+          
+          // If timer is enabled, set focus mode with timer
+          if (message.useTimer && message.timerDuration) {
+            const now = Date.now();
+            userPreferences.focusMode = true;
+            userPreferences.focusModeStartTime = now;
+            userPreferences.focusModeEndTime = now + message.timerDuration;
+            
+            // Set an alarm to disable focus mode when timer expires
+            chrome.alarms.create('focusModeTimer', {
+              when: userPreferences.focusModeEndTime
+            });
+            
+            console.log(`[Focus Nudge] Task mode enabled with timer for ${formatTime(message.timerDuration)}`);
+          }
+          
+          // Store the current task
+          userPreferences.currentTask = {
+            taskType: message.taskType,
+            confidence: message.confidence,
+            enabledAt: Date.now()
+          };
+          
+          // Save user preferences
+          await chrome.storage.sync.set({ userPreferences });
+          
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('[Focus Nudge] Error enabling task mode:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }
@@ -310,6 +350,29 @@ async function handleAlarm(alarm) {
       // Detect current task
       if (userPreferences.taskDetectionEnabled) {
         await detectCurrentTask();
+      }
+    } else if (alarm.name === 'focusModeTimer') {
+      // Focus mode timer expired
+      console.log('[Focus Nudge] Focus mode timer expired');
+      
+      // Disable focus mode
+      userPreferences.focusMode = false;
+      userPreferences.focusModeStartTime = null;
+      userPreferences.focusModeEndTime = null;
+      
+      // Save user preferences
+      await chrome.storage.sync.set({ userPreferences });
+      
+      // Notify user that focus mode has ended
+      if (activeTabId) {
+        try {
+          await chrome.tabs.sendMessage(activeTabId, {
+            type: 'FOCUS_MODE_ENDED',
+            message: 'Your 30-minute job application focus session has ended.'
+          });
+        } catch (error) {
+          console.error('[Focus Nudge] Error sending focus mode ended notification:', error);
+        }
       }
     }
   } catch (error) {

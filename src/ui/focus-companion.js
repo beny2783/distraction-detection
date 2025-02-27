@@ -254,34 +254,60 @@ class FocusCompanion {
     console.log(`[Focus Companion] Displaying task: ${taskData.taskType} (${taskName})`);
     console.log(`[Focus Companion] Task message: ${taskMessage}`);
     
-    // Create bubble content
-    this.bubble.innerHTML = `
-      <div class="bubble-header">
-        <span class="task-icon">${taskIcon}</span>
-        <span class="task-name">${taskName}</span>
-        <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
-      </div>
-      <div class="bubble-content">
-        ${taskMessage}
-      </div>
-      <div class="bubble-actions">
-        <button class="action-button primary" id="enable-task-mode">Enable</button>
-        <button class="action-button secondary" id="dismiss-task">Not now</button>
-        <button class="action-button tertiary" id="task-settings">Settings</button>
-      </div>
-    `;
+    // Create bubble content with timer option for job applications
+    if (taskData.taskType === 'job_application') {
+      this.bubble.innerHTML = `
+        <div class="bubble-header">
+          <span class="task-icon">${taskIcon}</span>
+          <span class="task-name">${taskName}</span>
+          <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
+        </div>
+        <div class="bubble-content">
+          ${taskMessage}
+        </div>
+        <div class="bubble-actions">
+          <button class="action-button primary" id="enable-task-mode">Enable</button>
+          <button class="action-button primary" id="enable-task-mode-timer">Enable for 30 min</button>
+          <button class="action-button secondary" id="dismiss-task">Not now</button>
+          <button class="action-button tertiary" id="task-settings">Settings</button>
+        </div>
+      `;
+    } else {
+      this.bubble.innerHTML = `
+        <div class="bubble-header">
+          <span class="task-icon">${taskIcon}</span>
+          <span class="task-name">${taskName}</span>
+          <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
+        </div>
+        <div class="bubble-content">
+          ${taskMessage}
+        </div>
+        <div class="bubble-actions">
+          <button class="action-button primary" id="enable-task-mode">Enable</button>
+          <button class="action-button secondary" id="dismiss-task">Not now</button>
+          <button class="action-button tertiary" id="task-settings">Settings</button>
+        </div>
+      `;
+    }
     
     // Add event listeners to buttons
     setTimeout(() => {
       // Use the shadow root to find the buttons
       const root = this.shadowRoot || document;
       const enableButton = root.getElementById('enable-task-mode');
+      const enableTimerButton = root.getElementById('enable-task-mode-timer');
       const dismissButton = root.getElementById('dismiss-task');
       const settingsButton = root.getElementById('task-settings');
       
       if (enableButton) {
         enableButton.addEventListener('click', () => {
           this.enableTaskMode(taskData);
+        });
+      }
+      
+      if (enableTimerButton) {
+        enableTimerButton.addEventListener('click', () => {
+          this.enableTaskMode(taskData, true);
         });
       }
       
@@ -310,12 +336,23 @@ class FocusCompanion {
   /**
    * Enable task mode
    * @param {Object} taskData - The task data
+   * @param {boolean} useTimer - Whether to use a timer (30 minutes)
    */
-  enableTaskMode(taskData) {
-    console.log('[Focus Companion] Enabling task mode:', taskData);
+  enableTaskMode(taskData, useTimer = false) {
+    console.log('[Focus Companion] Enabling task mode:', taskData, 'with timer:', useTimer);
     
     // Set happy expression
     this.setExpression('happy');
+    
+    // Calculate end time if timer is used
+    let endTimeMessage = '';
+    if (useTimer) {
+      const endTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
+      const hours = endTime.getHours();
+      const minutes = endTime.getMinutes();
+      const formattedTime = `${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
+      endTimeMessage = ` until ${formattedTime}`;
+    }
     
     // Update bubble content
     this.bubble.innerHTML = `
@@ -325,7 +362,7 @@ class FocusCompanion {
         <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
       </div>
       <div class="bubble-content">
-        ${this.getTaskName(taskData.taskType)} Mode enabled! I'll help you stay focused.
+        ${this.getTaskName(taskData.taskType)} Mode enabled${endTimeMessage}! I'll help you stay focused.
       </div>
       <div class="bubble-actions">
         <button class="action-button primary" id="got-it">Got it!</button>
@@ -341,7 +378,9 @@ class FocusCompanion {
     chrome.runtime.sendMessage({
       type: 'ENABLE_TASK_MODE',
       taskType: taskData.taskType,
-      confidence: taskData.confidence
+      confidence: taskData.confidence,
+      useTimer: useTimer,
+      timerDuration: useTimer ? 30 * 60 * 1000 : null // 30 minutes in milliseconds
     });
     
     // Auto-hide after 5 seconds
@@ -676,6 +715,51 @@ class FocusCompanion {
     // Show the companion
     console.log('[Focus Companion] Calling show() method');
     this.show();
+  }
+  
+  /**
+   * Show a notification when focus mode timer ends
+   * @param {Object} data - The notification data
+   */
+  showFocusModeEndedNotification(data) {
+    console.log('[Focus Companion] Focus mode ended:', data);
+    
+    // Set appropriate expression
+    this.setExpression('happy');
+    
+    // Update bubble content
+    this.bubble.innerHTML = `
+      <div class="bubble-header">
+        <span class="task-icon">⏰</span>
+        <span class="task-name">Focus Mode Ended</span>
+      </div>
+      <div class="bubble-content">
+        ${data.message || 'Your focus session has ended.'}
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="got-it-focus-ended">Got it!</button>
+      </div>
+    `;
+    
+    // Add event listener to button
+    setTimeout(() => {
+      const root = this.shadowRoot || document;
+      const gotItButton = root.getElementById('got-it-focus-ended');
+      
+      if (gotItButton) {
+        gotItButton.addEventListener('click', () => {
+          this.hide();
+        });
+      }
+    }, 100);
+    
+    // Show the companion
+    this.show();
+    
+    // Auto-hide after 10 seconds
+    setTimeout(() => {
+      this.hide();
+    }, 10000);
   }
 }
 
