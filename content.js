@@ -639,35 +639,44 @@ function handleMessage(message, sender, sendResponse) {
     const pageContent = document.body.innerText.substring(0, 5000);
     sendResponse({ success: true, pageContent });
   } else if (message.type === 'TASK_DETECTED') {
-    // Handle task detection events
-    console.log('[Focus Nudge] Task detected:', message);
-    
-    // Map the task type from the background script to the Focus Companion
-    // The background script uses TASK_TYPES.JOB_SEARCH ('job_search')
-    // but the Focus Companion expects 'job_application'
-    const taskTypeMapping = {
-      'job_search': 'job_application',
-      'learning': 'learning',
-      'social_browsing': 'social_media',
-      'shopping': 'shopping',
-      'entertainment': 'default',
-      'research': 'research',
-      'communication': 'email',
-      'unknown': 'default'
-    };
-    
-    // Create a copy of the message with the mapped task type
-    const mappedMessage = {
-      ...message,
-      taskType: taskTypeMapping[message.taskType] || 'default'
-    };
-    
-    console.log('[Focus Nudge] Mapped task type:', message.taskType, '->', mappedMessage.taskType);
-    
-    // Show the task detection alert with the mapped task type
-    showTaskDetectionAlert(mappedMessage);
-    
-    sendResponse({ success: true });
+    // Check if focus mode is active
+    chrome.storage.sync.get('userPreferences', (result) => {
+      if (result.userPreferences?.focusMode) {
+        console.log('[Focus Nudge] Ignoring task detection - Focus mode is active');
+        sendResponse({ success: true });
+        return;
+      }
+
+      // Handle task detection events
+      console.log('[Focus Nudge] Task detected:', message);
+      
+      // Map the task type from the background script to the Focus Companion
+      // The background script uses TASK_TYPES.JOB_SEARCH ('job_search')
+      // but the Focus Companion expects 'job_application'
+      const taskTypeMapping = {
+        'job_search': 'job_application',
+        'learning': 'learning',
+        'social_browsing': 'social_media',
+        'shopping': 'shopping',
+        'entertainment': 'default',
+        'research': 'research',
+        'communication': 'email',
+        'unknown': 'default'
+      };
+      
+      // Create a copy of the message with the mapped task type
+      const mappedMessage = {
+        ...message,
+        taskType: taskTypeMapping[message.taskType] || 'default'
+      };
+      
+      console.log('[Focus Nudge] Mapped task type:', message.taskType, '->', mappedMessage.taskType);
+      
+      // Show the task detection alert with the mapped task type
+      showTaskDetectionAlert(mappedMessage);
+      
+      sendResponse({ success: true });
+    });
   } else if (message.type === 'FOCUS_MODE_ENDED') {
     // Handle focus mode ended notification
     console.log('[Focus Nudge] Focus mode ended:', message);

@@ -5,6 +5,8 @@
  * offering contextual help without being intrusive.
  */
 
+import FocusDashboard from './focus-dashboard.js';
+
 class FocusCompanion {
   constructor() {
     console.log('[Focus Companion] Constructor called');
@@ -16,6 +18,7 @@ class FocusCompanion {
     this.currentTask = null;
     this.previousTask = null;
     this.isVisible = false;
+    this.focusDashboard = null;
     
     // Default expressions with relative paths - these will be updated by the direct loader
     this.expressions = {
@@ -71,11 +74,24 @@ class FocusCompanion {
     this.bubble = document.createElement('div');
     this.bubble.className = 'companion-bubble';
     
-    // Create status indicator
+    // Create status indicator with stats button
     this.statusIndicator = document.createElement('div');
     this.statusIndicator.className = 'focus-status-indicator';
     this.statusIndicator.setAttribute('data-extension-element', 'true');
-    this.statusIndicator.innerHTML = '<div class="status-icon">🔍</div>';
+    
+    // Add stats button
+    const statsButton = document.createElement('button');
+    statsButton.className = 'stats-button';
+    statsButton.innerHTML = '📊';
+    statsButton.title = 'View Focus Stats';
+    
+    // Add magnifying glass
+    const magnifyingGlass = document.createElement('div');
+    magnifyingGlass.className = 'status-icon';
+    magnifyingGlass.innerHTML = '🔍';
+    
+    this.statusIndicator.appendChild(magnifyingGlass);
+    this.statusIndicator.appendChild(statsButton);
     
     // Add elements to container
     this.container.appendChild(this.avatar);
@@ -130,10 +146,37 @@ class FocusCompanion {
    * Add event listeners
    */
   addEventListeners() {
-    // Status indicator click
-    this.statusIndicator.addEventListener('click', () => {
-      this.show();
-    });
+    // Status indicator click (magnifying glass)
+    const magnifyingGlass = this.statusIndicator.querySelector('.status-icon');
+    if (magnifyingGlass) {
+      magnifyingGlass.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        this.showWelcomeMessage(); // Show welcome message instead of just show()
+      });
+    }
+    
+    // Stats button click
+    const statsButton = this.statusIndicator.querySelector('.stats-button');
+    if (statsButton) {
+      statsButton.addEventListener('click', async (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        try {
+          // Get focus stats
+          const result = await chrome.storage.local.get(['focusStats']);
+          const stats = result.focusStats || {
+            focusScore: 95,
+            focusTime: 0,
+            distractionCount: 0,
+            streakCount: 0
+          };
+          
+          // Show stats in bubble
+          this.showStats(stats);
+        } catch (error) {
+          console.error('[Focus Companion] Error showing stats:', error);
+        }
+      });
+    }
     
     // Document click (for hiding)
     document.addEventListener('click', (e) => {
@@ -152,9 +195,10 @@ class FocusCompanion {
   setExpression(expression) {
     console.log(`[Focus Companion] Setting expression to "${expression}"`);
     
+    // Default to idle if expression not found
     if (!this.expressions[expression]) {
-      console.error(`[Focus Companion] Expression "${expression}" not found`);
-      return;
+      console.log(`[Focus Companion] Expression "${expression}" not found, using idle`);
+      expression = 'idle';
     }
     
     const imagePath = this.expressions[expression];
@@ -229,6 +273,9 @@ class FocusCompanion {
     console.log('[Focus Companion] Adding visible class to status indicator');
     this.statusIndicator.classList.add('visible');
     this.isVisible = false;
+
+    // Stop updating stats when hidden
+    this.stopStatsInterval();
   }
   
   /**
@@ -334,59 +381,130 @@ class FocusCompanion {
   }
   
   /**
+   * Show a message in the bubble
+   * @param {string} message - The message to show
+   */
+  showMessage(message) {
+    this.bubble.innerHTML = `
+      <div class="bubble-content">
+        ${message}
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button primary" id="message-got-it">Got it!</button>
+      </div>
+    `;
+
+    // Add event listener using shadow root
+    setTimeout(() => {
+      const root = this.shadowRoot || document;
+      const gotItButton = root.getElementById('message-got-it');
+      if (gotItButton) {
+        gotItButton.addEventListener('click', () => {
+          this.hide();
+        });
+      }
+    }, 100);
+
+    this.show();
+  }
+  
+  /**
    * Enable task mode
    * @param {Object} taskData - The task data
    * @param {boolean} useTimer - Whether to use a timer (30 minutes)
    */
-  enableTaskMode(taskData, useTimer = false) {
-    console.log('[Focus Companion] Enabling task mode:', taskData, 'with timer:', useTimer);
-    
-    // Set happy expression
-    this.setExpression('happy');
-    
-    // Calculate end time if timer is used
-    let endTimeMessage = '';
-    if (useTimer) {
-      const endTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
-      const hours = endTime.getHours();
-      const minutes = endTime.getMinutes();
-      const formattedTime = `${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
-      endTimeMessage = ` until ${formattedTime}`;
+  async enableTaskMode(taskData, useTimer = false) {
+    try {
+      console.log('[Focus Companion] Enabling task mode with data:', taskData, 'useTimer:', useTimer);
+      
+      // Set happy expression
+      this.setExpression('happy');
+      
+      // Calculate end time if timer is used
+      let endTimeMessage = '';
+      if (useTimer) {
+        const endTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
+        const hours = endTime.getHours();
+        const minutes = endTime.getMinutes();
+        const formattedTime = `${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
+        endTimeMessage = ` until ${formattedTime}`;
+      }
+      
+      // Update bubble content
+      this.bubble.innerHTML = `
+        <div class="bubble-header">
+          <span class="task-icon">${this.getTaskIcon(taskData.taskType)}</span>
+          <span class="task-name">${this.getTaskName(taskData.taskType)} Mode</span>
+          <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
+        </div>
+        <div class="bubble-content">
+          ${this.getTaskName(taskData.taskType)} Mode enabled${endTimeMessage}! I'll help you stay focused.
+        </div>
+        <div class="bubble-actions">
+          <button class="action-button primary" id="enable-got-it">Got it!</button>
+        </div>
+      `;
+      
+      // Add event listener using shadow root
+      setTimeout(() => {
+        const root = this.shadowRoot || document;
+        const gotItButton = root.getElementById('enable-got-it');
+        if (gotItButton) {
+          gotItButton.addEventListener('click', () => {
+            // Show stats instead of hiding
+            const result = chrome.storage.local.get(['focusStats']);
+            result.then(data => {
+              this.showStats(data.focusStats || this.stats);
+            });
+          });
+        }
+      }, 100);
+      
+      // Send message to background script to enable task mode
+      console.log('[Focus Companion] Sending ENABLE_TASK_MODE message to background script');
+      await chrome.runtime.sendMessage({
+        type: 'ENABLE_TASK_MODE',
+        taskType: taskData.taskType,
+        confidence: taskData.confidence,
+        useTimer: useTimer,
+        timerDuration: useTimer ? 30 * 60 * 1000 : null // 30 minutes in milliseconds
+      });
+      
+      // Show the companion
+      this.show();
+    } catch (error) {
+      console.error('[Focus Companion] Error enabling task mode:', error);
+      this.setExpression('sad');
+      this.showMessage('Oops! Something went wrong. Please try again.');
     }
-    
-    // Update bubble content
-    this.bubble.innerHTML = `
-      <div class="bubble-header">
-        <span class="task-icon">${this.getTaskIcon(taskData.taskType)}</span>
-        <span class="task-name">${this.getTaskName(taskData.taskType)} Mode</span>
-        <span class="confidence">${Math.round(taskData.confidence * 100)}%</span>
-      </div>
-      <div class="bubble-content">
-        ${this.getTaskName(taskData.taskType)} Mode enabled${endTimeMessage}! I'll help you stay focused.
-      </div>
-      <div class="bubble-actions">
-        <button class="action-button primary" id="got-it">Got it!</button>
-      </div>
-    `;
-    
-    // Add event listener to button
-    document.getElementById('got-it').addEventListener('click', () => {
-      this.hide();
-    });
-    
-    // Send message to background script to enable task mode
-    chrome.runtime.sendMessage({
-      type: 'ENABLE_TASK_MODE',
-      taskType: taskData.taskType,
-      confidence: taskData.confidence,
-      useTimer: useTimer,
-      timerDuration: useTimer ? 30 * 60 * 1000 : null // 30 minutes in milliseconds
-    });
-    
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-      this.hide();
-    }, 5000);
+  }
+  
+  /**
+   * Disable task mode
+   */
+  async disableTaskMode() {
+    try {
+      console.log('[Focus Companion] Disabling task mode');
+      
+      // Send message to background script
+      await chrome.runtime.sendMessage({ type: 'DISABLE_TASK_MODE' });
+
+      // Clean up focus dashboard
+      if (this.focusDashboard) {
+        console.log('[Focus Companion] Destroying focus dashboard');
+        this.focusDashboard.destroy();
+        this.focusDashboard = null;
+        console.log('[Focus Companion] Focus dashboard destroyed');
+      }
+
+      // Show success message
+      this.setExpression('happy');
+      this.showMessage('Focus mode disabled. Great job staying focused!');
+    } catch (error) {
+      console.error('[Focus Companion] Error disabling task mode:', error);
+      this.setExpression('sad');
+      this.showMessage('Oops! Something went wrong. Please try again.');
+    }
   }
   
   /**
@@ -760,6 +878,130 @@ class FocusCompanion {
     setTimeout(() => {
       this.hide();
     }, 10000);
+  }
+  
+  /**
+   * Show focus stats
+   * @param {Object} stats - The focus stats to display
+   */
+  showStats(stats) {
+    this.setExpression('happy');
+    
+    // Create stats HTML with real-time timer and all metrics
+    const statsHtml = `
+      <div class="stats-display" style="padding: 15px;">
+        <div class="focus-timer" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: linear-gradient(135deg, #6e8efb, #a777e3); padding: 10px; border-radius: 8px; color: white;">
+          <span class="timer-label" style="font-size: 12px; opacity: 0.9;">Focus Time Remaining</span>
+          <span class="timer-value" id="focus-time-remaining" style="font-size: 20px; font-weight: 500;">--:--</span>
+        </div>
+        
+        <div class="focus-stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+          <div class="stat-card" style="background: #f8f9fa; padding: 12px; border-radius: 8px; text-align: center;">
+            <div class="stat-value" id="focus-score" style="font-size: 24px; font-weight: 500; color: #6e8efb;">${stats.focusScore}</div>
+            <div class="stat-label" style="font-size: 12px; color: #666;">Focus Score</div>
+            <div class="focus-meter" style="height: 4px; background-color: #e0e0e0; border-radius: 2px; overflow: hidden; margin-top: 8px;">
+              <div class="focus-meter-fill" style="height: 100%; background: linear-gradient(90deg, #6e8efb, #a777e3); width: ${stats.focusScore}%;"></div>
+            </div>
+          </div>
+          
+          <div class="stat-card" style="background: #f8f9fa; padding: 12px; border-radius: 8px; text-align: center;">
+            <div class="stat-value" id="distraction-count" style="font-size: 24px; font-weight: 500; color: #6e8efb;">${stats.distractionCount}</div>
+            <div class="stat-label" style="font-size: 12px; color: #666;">Distractions</div>
+          </div>
+          
+          <div class="stat-card" style="background: #f8f9fa; padding: 12px; border-radius: 8px; text-align: center;">
+            <div class="stat-value" id="active-time" style="font-size: 24px; font-weight: 500; color: #6e8efb;">0m</div>
+            <div class="stat-label" style="font-size: 12px; color: #666;">Active Time</div>
+          </div>
+          
+          <div class="stat-card" style="background: #f8f9fa; padding: 12px; border-radius: 8px; text-align: center;">
+            <div class="stat-value" id="streak-count" style="font-size: 24px; font-weight: 500; color: #6e8efb;">${stats.streakCount}</div>
+            <div class="stat-label" style="font-size: 12px; color: #666;">Day Streak</div>
+          </div>
+        </div>
+        
+        <div class="bubble-actions" style="margin-top: 15px; text-align: right;">
+          <button class="action-button secondary" id="minimize-stats">Minimize</button>
+        </div>
+      </div>
+    `;
+    
+    this.bubble.innerHTML = statsHtml;
+    
+    // Start updating stats in real-time
+    this.startStatsInterval();
+    
+    // Add event listeners
+    setTimeout(() => {
+      const minimizeButton = this.shadowRoot.getElementById('minimize-stats');
+      if (minimizeButton) {
+        minimizeButton.addEventListener('click', () => {
+          this.hide();
+        });
+      }
+    }, 100);
+
+    this.show();
+  }
+
+  /**
+   * Start updating stats in real-time
+   */
+  startStatsInterval() {
+    // Clear any existing interval
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+    }
+
+    // Store start time
+    this.statsStartTime = Date.now();
+
+    // Update stats every second
+    this.statsInterval = setInterval(async () => {
+      try {
+        // Get current stats and preferences
+        const result = await chrome.storage.local.get(['focusStats', 'userPreferences']);
+        const stats = result.focusStats || this.stats;
+        const prefs = result.userPreferences || {};
+
+        // Update stats if elements exist
+        const focusScoreEl = this.shadowRoot.getElementById('focus-score');
+        const distractionCountEl = this.shadowRoot.getElementById('distraction-count');
+        const activeTimeEl = this.shadowRoot.getElementById('active-time');
+        const timeRemainingEl = this.shadowRoot.getElementById('focus-time-remaining');
+        const meterFill = this.shadowRoot.querySelector('.focus-meter-fill');
+
+        if (focusScoreEl) focusScoreEl.textContent = stats.focusScore;
+        if (distractionCountEl) distractionCountEl.textContent = stats.distractionCount;
+        
+        // Calculate and update active time
+        const activeTime = Math.floor((Date.now() - this.statsStartTime) / 60000);
+        if (activeTimeEl) activeTimeEl.textContent = `${activeTime}m`;
+
+        // Update focus meter
+        if (meterFill) meterFill.style.width = `${stats.focusScore}%`;
+
+        // Update time remaining if timer is active
+        if (timeRemainingEl && prefs.focusModeEndTime) {
+          const remaining = Math.max(0, prefs.focusModeEndTime - Date.now());
+          const minutes = Math.floor(remaining / 60000);
+          const seconds = Math.floor((remaining % 60000) / 1000);
+          timeRemainingEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+      } catch (error) {
+        console.error('[Focus Companion] Error updating stats:', error);
+      }
+    }, 1000);
+  }
+
+  /**
+   * Stop updating stats
+   */
+  stopStatsInterval() {
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
   }
 }
 

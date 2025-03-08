@@ -16,7 +16,7 @@
     .header {
       background: linear-gradient(135deg, #6e8efb, #a777e3);
       color: white;
-      padding: 15px;
+      padding: 20px;
       text-align: center;
       border-radius: 0 0 10px 10px;
       margin-bottom: 15px;
@@ -24,14 +24,20 @@
     
     .header h1 {
       margin: 0;
-      font-size: 20px;
+      font-size: 24px;
       font-weight: 500;
     }
     
     .header p {
-      margin: 5px 0 0;
+      margin: 8px 0 0;
       font-size: 14px;
       opacity: 0.9;
+    }
+
+    .focus-score {
+      font-size: 36px;
+      font-weight: bold;
+      margin: 10px 0;
     }
     
     .container {
@@ -39,7 +45,11 @@
     }
     
     .section {
-      margin-bottom: 20px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .section-title {
@@ -47,6 +57,59 @@
       font-weight: 500;
       margin-bottom: 10px;
       color: #555;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .refresh-button {
+      background: none;
+      border: none;
+      padding: 4px;
+      cursor: pointer;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s;
+    }
+
+    .refresh-button:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .refresh-button svg {
+      fill: #666;
+    }
+
+    .refresh-button:hover svg {
+      fill: #6e8efb;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .stat-card {
+      background: #f8f9fa;
+      padding: 10px;
+      border-radius: 6px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #6e8efb;
+      margin: 5px 0;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #666;
     }
     
     .toggle-container {
@@ -199,10 +262,6 @@
       margin-bottom: 0;
     }
     
-    .stat-value {
-      font-weight: 500;
-    }
-    
     .button {
       display: block;
       width: 100%;
@@ -217,7 +276,7 @@
     }
     
     .button:hover {
-      background-color: #5d7ce0;
+      background-color: #5d7ce6;
     }
     
     .footer {
@@ -274,132 +333,63 @@
 <body>
   <div class="header">
     <h1>Focus Nudge</h1>
-    <p>Stay focused and minimize distractions</p>
+    <p>Your Focus Assistant</p>
   </div>
   
   <div class="container">
-    <!-- Current Status Section -->
     <div class="section">
-      <div class="section-title">Current Status</div>
-      <div class="status-container">
-        <div class="status-item">
-          <div class="status-label">Distraction Score</div>
-          <div class="status-value" id="current-distraction-score">0%</div>
-        </div>
-        <div class="status-item">
-          <div class="status-label">Distractions Today</div>
-          <div class="status-value" id="distraction-count">0</div>
-        </div>
-        <div class="status-item">
-          <div class="status-label">Nudges Shown</div>
-          <div class="status-value" id="nudge-count">0</div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Task Detection Section -->
-    <div class="section task-detection">
-      <div class="section-title">Detected Task</div>
-      <div class="task-info">
-        <div class="task-label">Current Task:</div>
-        <div class="task-value" id="detected-task">Unknown</div>
-      </div>
-      <div class="task-info">
-        <div class="task-label">Confidence:</div>
-        <div class="task-value" id="task-confidence">0%</div>
-      </div>
-      <div class="task-actions" style="margin-top: 10px; text-align: center;">
-        <button id="test-detection-button" style="padding: 5px 10px; background-color: #f0f0f0; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px;">
-          Test Detection Now
+      <div class="section-title">
+        Focus Score
+        <button id="refresh-stats" class="refresh-button">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <path d="M8 3a5 5 0 0 0-5 5h2l-3 3-3-3h2a7 7 0 1 1 2.07 4.93l1.42 1.42A9 9 0 1 0 8 3z"/>
+          </svg>
         </button>
       </div>
+      <div class="focus-score" id="focus-score">95</div>
     </div>
     
-    <!-- Settings Section -->
+    <div class="section">
+      <div class="section-title">Today's Stats</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="focus-time">0h</div>
+          <div class="stat-label">Focus Time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="distraction-count">0</div>
+          <div class="stat-label">Distractions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="streak-count">0</div>
+          <div class="stat-label">Day Streak</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="nudge-count">0</div>
+          <div class="stat-label">Nudges</div>
+        </div>
+      </div>
+    </div>
+    
     <div class="section">
       <div class="section-title">Settings</div>
-      
       <div class="toggle-container">
-        <div class="toggle-label">Enable Nudging</div>
+        <span class="toggle-label">Enable Nudging</span>
         <label class="toggle">
           <input type="checkbox" id="nudging-toggle" checked>
           <span class="slider"></span>
         </label>
       </div>
-      
       <div class="toggle-container">
-        <div class="toggle-label">Task Detection</div>
+        <span class="toggle-label">Task Detection</span>
         <label class="toggle">
           <input type="checkbox" id="task-detection-toggle" checked>
           <span class="slider"></span>
         </label>
       </div>
-      
-      <div class="toggle-container">
-        <div class="toggle-label">Task-Specific Nudges</div>
-        <label class="toggle">
-          <input type="checkbox" id="task-specific-nudges-toggle" checked>
-          <span class="slider"></span>
-        </label>
-      </div>
-      
-      <div class="input-group">
-        <label for="focus-goal">What's your focus goal today?</label>
-        <input type="text" id="focus-goal" placeholder="e.g., Complete project report">
-      </div>
-      
-      <div class="radio-group">
-        <div class="radio-option">
-          <input type="radio" name="sensitivity" id="sensitivity-low" value="low">
-          <label for="sensitivity-low">Low</label>
-        </div>
-        <div class="radio-option">
-          <input type="radio" name="sensitivity" id="sensitivity-medium" value="medium" checked>
-          <label for="sensitivity-medium">Medium</label>
-        </div>
-        <div class="radio-option">
-          <input type="radio" name="sensitivity" id="sensitivity-high" value="high">
-          <label for="sensitivity-high">High</label>
-        </div>
-      </div>
-      
-      <div class="select-group">
-        <label for="model-type">Detection Model</label>
-        <select id="model-type">
-          <option value="rule-based">Rule-based</option>
-          <option value="random-forest" selected>Random Forest</option>
-        </select>
-        <div class="model-info" id="model-info">Random Forest v0.1.0</div>
-      </div>
     </div>
     
-    <div class="section">
-      <div class="section-title">Today's Stats</div>
-      <div class="stats">
-        <div class="stat-item">
-          <span>Distractions detected:</span>
-          <span class="stat-value" id="distraction-count">0</span>
-        </div>
-        <div class="stat-item">
-          <span>Nudges shown:</span>
-          <span class="stat-value" id="nudge-count">0</span>
-        </div>
-        <div class="stat-item">
-          <span>Top distraction:</span>
-          <span class="stat-value" id="top-distraction">None</span>
-        </div>
-        <div class="stat-item">
-          <span>Current distraction score:</span>
-          <span class="stat-value" id="current-distraction-score">0%</span>
-        </div>
-      </div>
-    </div>
-    
-    <button class="button" id="view-insights">View Detailed Insights</button>
-    
-    <div class="footer">
-      <p>Focus Nudge v0.1.0</p>
-    </div>
+    <button id="view-insights" class="button">View Detailed Insights</button>
   </div>
   
   <script src="popup.js"></script>

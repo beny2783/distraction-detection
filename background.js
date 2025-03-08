@@ -50,6 +50,89 @@ let currentDetectedTask = {
   lastUpdated: 0
 };
 
+// Focus mode state
+let focusMode = {
+  active: false,
+  startTime: null,
+  endTime: null,
+  taskType: null,
+  stats: {
+    focusScore: 95,
+    focusTime: 0,
+    distractionCount: 0,
+    streakCount: 0
+  }
+};
+
+// Load focus stats
+chrome.storage.local.get(['focusStats'], (result) => {
+  if (result.focusStats) {
+    focusMode.stats = result.focusStats;
+    
+    // Check if it's a new day
+    const today = new Date().toDateString();
+    if (focusMode.stats.lastActiveDate !== today) {
+      // Update streak
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (focusMode.stats.lastActiveDate === yesterday.toDateString()) {
+        focusMode.stats.streakCount++;
+      } else {
+        focusMode.stats.streakCount = 1;
+      }
+      
+      // Reset daily stats
+      focusMode.stats.focusTime = 0;
+      focusMode.stats.distractionCount = 0;
+      focusMode.stats.lastActiveDate = today;
+      
+      // Save updated stats
+      chrome.storage.local.set({ focusStats: focusMode.stats });
+    }
+  }
+});
+
+// Track focus time
+let lastActiveTime = Date.now();
+let isTracking = false;
+
+chrome.tabs.onActivated.addListener(() => {
+  if (!isTracking) {
+    startFocusTracking();
+  }
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    stopFocusTracking();
+  } else {
+    startFocusTracking();
+  }
+});
+
+function startFocusTracking() {
+  isTracking = true;
+  lastActiveTime = Date.now();
+}
+
+function stopFocusTracking() {
+  if (isTracking) {
+    const focusSession = (Date.now() - lastActiveTime) / 1000; // Convert to seconds
+    focusMode.stats.focusTime += focusSession;
+    
+    // Update focus score
+    updateFocusStats();
+    
+    // Save stats
+    chrome.storage.local.set({ focusStats: focusMode.stats });
+    
+    isTracking = false;
+  }
+}
+
+// Update focus stats every minute
+setInterval(updateFocusStats, 60000);
+
 /**
  * Initialize the background script
  */
@@ -218,43 +301,16 @@ async function handleMessage(message, sender, sendResponse) {
         break;
         
       case 'ENABLE_TASK_MODE':
-        // Enable task mode
-        try {
-          console.log('[Focus Nudge] Enabling task mode:', message);
-          
-          // Update user preferences
-          userPreferences.taskSpecificNudgesEnabled = true;
-          
-          // If timer is enabled, set focus mode with timer
-          if (message.useTimer && message.timerDuration) {
-            const now = Date.now();
-            userPreferences.focusMode = true;
-            userPreferences.focusModeStartTime = now;
-            userPreferences.focusModeEndTime = now + message.timerDuration;
-            
-            // Set an alarm to disable focus mode when timer expires
-            chrome.alarms.create('focusModeTimer', {
-              when: userPreferences.focusModeEndTime
-            });
-            
-            console.log(`[Focus Nudge] Task mode enabled with timer for ${formatTime(message.timerDuration)}`);
-          }
-          
-          // Store the current task
-          userPreferences.currentTask = {
-            taskType: message.taskType,
-            confidence: message.confidence,
-            enabledAt: Date.now()
-          };
-          
-          // Save user preferences
-          await chrome.storage.sync.set({ userPreferences });
-          
-          sendResponse({ success: true });
-        } catch (error) {
-          console.error('[Focus Nudge] Error enabling task mode:', error);
-          sendResponse({ success: false, error: error.message });
-        }
+        handleEnableTaskMode(message, sender);
+        break;
+        
+      case 'DISABLE_TASK_MODE':
+        handleDisableTaskMode();
+        break;
+        
+      case 'distraction_detected':
+        focusMode.stats.distractionCount++;
+        updateFocusStats();
         break;
         
       default:
@@ -351,14 +407,14 @@ async function handleAlarm(alarm) {
       if (userPreferences.taskDetectionEnabled) {
         await detectCurrentTask();
       }
-    } else if (alarm.name === 'focusModeTimer') {
+    } else if (alarm.name === 'focusModeEnd') {
       // Focus mode timer expired
       console.log('[Focus Nudge] Focus mode timer expired');
       
       // Disable focus mode
-      userPreferences.focusMode = false;
-      userPreferences.focusModeStartTime = null;
-      userPreferences.focusModeEndTime = null;
+      focusMode.active = false;
+      focusMode.startTime = null;
+      focusMode.endTime = null;
       
       // Save user preferences
       await chrome.storage.sync.set({ userPreferences });
@@ -744,18 +800,68 @@ async function checkForDistractions(tabId, events, features) {
     // Skip if no domain or model manager
     if (!features.domain || !modelManager) return;
     
-    // Skip if this domain is in the allowed sites list
-    if (userPreferences.allowedSites.includes(features.domain)) return;
+    // Get current task mode
+    const taskMode = focusMode.taskType;
     
-    // Skip if in focus mode and this is not an allowed site
-    if (userPreferences.focusMode) {
+    // Define allowed domains for different task modes
+    const allowedDomains = {
+      'job_application': [
+        'linkedin.com',
+        'indeed.com',
+        'glassdoor.com',
+        'monster.com',
+        'ziprecruiter.com',
+        'careers.google.com',
+        'jobs.lever.co',
+        'greenhouse.io',
+        'workday.com'
+      ]
+    };
+    
+    // Check if site is allowed for current task mode
+    const isAllowedForTaskMode = taskMode && 
+      allowedDomains[taskMode] && 
+      allowedDomains[taskMode].some(domain => features.domain.includes(domain));
+    
+    // Skip if this domain is in the user's allowed sites list or allowed for current task mode
+    if (userPreferences.allowedSites.includes(features.domain) || isAllowedForTaskMode) {
+      return;
+    }
+    
+    // Skip if not in focus mode time window
+    if (focusMode.active) {
       const now = Date.now();
-      if (userPreferences.focusModeStartTime && userPreferences.focusModeEndTime) {
-        if (now >= userPreferences.focusModeStartTime && now <= userPreferences.focusModeEndTime) {
-          // In focus mode time window
+      if (focusMode.startTime && focusMode.endTime) {
+        if (!(now >= focusMode.startTime && now <= focusMode.endTime)) {
           return;
         }
       }
+    }
+    
+    // Known distraction domains should always be flagged in task mode
+    const knownDistractionDomains = [
+      'youtube.com',
+      'facebook.com',
+      'twitter.com',
+      'instagram.com',
+      'reddit.com',
+      'tiktok.com',
+      'netflix.com',
+      'hulu.com',
+      'twitch.tv'
+    ];
+    
+    // If in task mode and on a known distraction site, mark as distraction
+    if (focusMode.active && knownDistractionDomains.some(d => features.domain.includes(d))) {
+      console.log('[Focus Nudge] Known distraction domain detected:', features.domain);
+      chrome.runtime.sendMessage({ type: 'distraction_detected' });
+      
+      // Generate and send nudge
+      const nudge = generateNudge(features.domain, { probability: 1.0, confidence: 1.0 });
+      if (nudge) {
+        sendNudgeToTab(tabId, nudge);
+      }
+      return;
     }
     
     // Prepare input for model
@@ -981,6 +1087,14 @@ function formatTime(milliseconds) {
  */
 async function detectCurrentTask() {
   try {
+    // Skip task detection if focus mode is active
+    if (focusMode.active) {
+      if (CONFIG.debugMode) {
+        console.log('Focus Nudge: Skipping task detection - Focus mode is active');
+      }
+      return;
+    }
+
     // Get recent events for the active tab
     if (!activeTabId) {
       if (CONFIG.debugMode) {
@@ -1144,6 +1258,128 @@ function formatTaskType(taskType) {
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
+}
+
+/**
+ * Handle enabling task mode
+ */
+async function handleEnableTaskMode(message, sender) {
+  try {
+    const { taskType, useTimer, timerDuration } = message;
+    const startTime = Date.now();
+    const endTime = useTimer ? startTime + timerDuration : null;
+
+    // Update focus mode state
+    focusMode = {
+      active: true,
+      startTime,
+      endTime,
+      taskType,
+      stats: {
+        ...focusMode.stats,
+        focusTime: 0
+      }
+    };
+
+    // Update user preferences
+    const userPreferences = {
+      focusMode: true,
+      focusModeStartTime: startTime,
+      focusModeEndTime: endTime,
+      currentTaskType: taskType
+    };
+
+    await chrome.storage.local.set({ userPreferences });
+
+    // Set alarm for focus mode end if timer is used
+    if (useTimer) {
+      chrome.alarms.create('focusModeEnd', {
+        when: endTime
+      });
+    }
+
+    // Start tracking focus time
+    updateFocusStats();
+  } catch (error) {
+    console.error('Error enabling task mode:', error);
+  }
+}
+
+/**
+ * Handle disabling task mode
+ */
+async function handleDisableTaskMode() {
+  try {
+    // Update final stats before disabling
+    await updateFocusStats();
+
+    // Clear focus mode state
+    focusMode = {
+      active: false,
+      startTime: null,
+      endTime: null,
+      taskType: null,
+      stats: focusMode.stats
+    };
+
+    // Update user preferences
+    const userPreferences = {
+      focusMode: false,
+      focusModeStartTime: null,
+      focusModeEndTime: null,
+      currentTaskType: null
+    };
+
+    await chrome.storage.local.set({ userPreferences });
+
+    // Clear focus mode end alarm
+    chrome.alarms.clear('focusModeEnd');
+  } catch (error) {
+    console.error('Error disabling task mode:', error);
+  }
+}
+
+/**
+ * Update focus stats
+ */
+async function updateFocusStats() {
+  if (!focusMode.active) return;
+
+  try {
+    const now = Date.now();
+    const result = await chrome.storage.local.get(['focusStats']);
+    const stats = result.focusStats || focusMode.stats;
+
+    // Calculate focus time (in seconds)
+    const focusTime = Math.floor((now - focusMode.startTime) / 1000);
+
+    // Calculate focus score based on:
+    // 1. Focus time (40%)
+    // 2. Distraction count (30%)
+    // 3. Streak (30%)
+    const hourlyGoal = 4; // 4 hours of focus time per day
+    const maxDistractions = 20;
+    const maxStreak = 7;
+
+    const focusTimeScore = Math.min(focusTime / (hourlyGoal * 3600), 1) * 40;
+    const distractionScore = Math.max(0, 1 - (stats.distractionCount / maxDistractions)) * 30;
+    const streakScore = Math.min(stats.streakCount / maxStreak, 1) * 30;
+
+    // Update stats
+    const updatedStats = {
+      ...stats,
+      focusTime,
+      focusScore: Math.round(focusTimeScore + distractionScore + streakScore)
+    };
+
+    // Save updated stats
+    await chrome.storage.local.set({ focusStats: updatedStats });
+
+    // Update focus mode state
+    focusMode.stats = updatedStats;
+  } catch (error) {
+    console.error('Error updating focus stats:', error);
+  }
 }
 
 // Initialize the background script
