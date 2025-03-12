@@ -60,7 +60,8 @@ let focusMode = {
     focusScore: 95,
     focusTime: 0,
     distractionCount: 0,
-    streakCount: 0
+    streakCount: 0,
+    recentDistractions: [] // Array to store recent distractions
   }
 };
 
@@ -863,8 +864,21 @@ async function checkForDistractions(tabId, events, features) {
       const currentStats = result.focusStats || focusMode.stats;
       currentStats.distractionCount = focusMode.stats.distractionCount;
       
+      // Add to recent distractions
+      const now = Date.now();
+      currentStats.recentDistractions = [
+        {
+          domain: features.domain,
+          timestamp: now
+        },
+        ...(currentStats.recentDistractions || []).slice(0, 9) // Keep last 10 distractions
+      ];
+      
       // Save updated stats
       await chrome.storage.local.set({ focusStats: currentStats });
+      
+      // Update focus mode state
+      focusMode.stats = currentStats;
       
       // Send distraction detected message to content script
       if (tabId) {

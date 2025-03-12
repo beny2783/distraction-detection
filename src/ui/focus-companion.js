@@ -1065,6 +1065,21 @@ class FocusCompanion {
             <div class="stat-label" style="font-size: 12px; color: #666;">Day Streak</div>
           </div>
         </div>
+
+        <div class="recent-distractions" style="margin-top: 15px; background: #f8f9fa; padding: 12px; border-radius: 8px;">
+          <div style="font-size: 14px; color: #666; margin-bottom: 8px;">Recent Distractions</div>
+          <div id="distraction-list" style="max-height: 120px; overflow-y: auto;">
+            ${stats.recentDistractions ? 
+              stats.recentDistractions.map(d => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee;">
+                  <span style="color: #333; font-size: 13px;">${d.domain}</span>
+                  <span style="color: #666; font-size: 12px;">${this.formatTimestamp(d.timestamp)}</span>
+                </div>
+              `).join('') :
+              '<div style="text-align: center; color: #999; padding: 10px;">No recent distractions</div>'
+            }
+          </div>
+        </div>
         
         <div class="bubble-actions" style="margin-top: 15px; text-align: right;">
           <button class="action-button secondary" id="minimize-stats">Minimize</button>
@@ -1088,6 +1103,29 @@ class FocusCompanion {
     }, 100);
 
     this.show();
+  }
+
+  /**
+   * Format timestamp to relative time
+   * @param {number} timestamp - The timestamp to format
+   * @returns {string} The formatted relative time
+   */
+  formatTimestamp(timestamp) {
+    const now = Date.now();
+    const diff = now - timestamp;
+    
+    if (diff < 60000) { // Less than 1 minute
+      return 'Just now';
+    } else if (diff < 3600000) { // Less than 1 hour
+      const minutes = Math.floor(diff / 60000);
+      return `${minutes}m ago`;
+    } else if (diff < 86400000) { // Less than 1 day
+      const hours = Math.floor(diff / 3600000);
+      return `${hours}h ago`;
+    } else {
+      const days = Math.floor(diff / 86400000);
+      return `${days}d ago`;
+    }
   }
 
   /**
@@ -1116,6 +1154,7 @@ class FocusCompanion {
         const activeTimeEl = this.shadowRoot.getElementById('active-time');
         const timeRemainingEl = this.shadowRoot.getElementById('focus-time-remaining');
         const meterFill = this.shadowRoot.querySelector('.focus-meter-fill');
+        const distractionListEl = this.shadowRoot.getElementById('distraction-list');
 
         // Update focus score
         if (focusScoreEl) {
@@ -1137,6 +1176,20 @@ class FocusCompanion {
         // Update focus meter
         if (meterFill) {
           meterFill.style.width = `${stats.focusScore}%`;
+        }
+
+        // Update recent distractions list
+        if (distractionListEl) {
+          if (stats.recentDistractions && stats.recentDistractions.length > 0) {
+            distractionListEl.innerHTML = stats.recentDistractions.map(d => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee;">
+                <span style="color: #333; font-size: 13px;">${d.domain}</span>
+                <span style="color: #666; font-size: 12px;">${this.formatTimestamp(d.timestamp)}</span>
+              </div>
+            `).join('');
+          } else {
+            distractionListEl.innerHTML = '<div style="text-align: center; color: #999; padding: 10px;">No recent distractions</div>';
+          }
         }
 
         // Update time remaining if timer is active
