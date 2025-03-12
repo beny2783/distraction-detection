@@ -180,11 +180,20 @@ class FocusCompanion {
     
     // Document click (for hiding)
     document.addEventListener('click', (e) => {
+      // Only hide if clicking outside AND not during job search options
       if (this.isVisible && 
           !this.container.contains(e.target) && 
-          !this.statusIndicator.contains(e.target)) {
+          !this.statusIndicator.contains(e.target) &&
+          !e.target.closest('#enable-job-search') && // Don't hide if clicking job search button
+          !e.target.closest('#enable-timer') && // Don't hide if clicking timer button
+          !e.target.closest('#enable-no-timer')) { // Don't hide if clicking no timer button
         this.hide();
       }
+    });
+
+    // Prevent clicks within the companion from bubbling up
+    this.container.addEventListener('click', (e) => {
+      e.stopPropagation();
     });
   }
   
@@ -422,13 +431,38 @@ class FocusCompanion {
       
       // Calculate end time if timer is used
       let endTimeMessage = '';
+      const startTime = Date.now();
+      const endTime = useTimer ? startTime + 30 * 60 * 1000 : null; // 30 minutes from now
+      
       if (useTimer) {
-        const endTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
-        const hours = endTime.getHours();
-        const minutes = endTime.getMinutes();
+        const endTimeDate = new Date(endTime);
+        const hours = endTimeDate.getHours();
+        const minutes = endTimeDate.getMinutes();
         const formattedTime = `${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
         endTimeMessage = ` until ${formattedTime}`;
       }
+      
+      // Initialize or reset stats
+      const initialStats = {
+        focusScore: 100, // Start with perfect score
+        focusTime: 0,
+        distractionCount: 0,
+        streakCount: await this.getStreakCount(),
+        activeTime: 0,
+        startTime: startTime,
+        endTime: endTime
+      };
+
+      // Store initial stats
+      await chrome.storage.local.set({ 
+        focusStats: initialStats,
+        userPreferences: {
+          focusMode: true,
+          focusModeStartTime: startTime,
+          focusModeEndTime: endTime,
+          currentTaskType: taskData.taskType
+        }
+      });
       
       // Update bubble content
       this.bubble.innerHTML = `
@@ -451,11 +485,8 @@ class FocusCompanion {
         const gotItButton = root.getElementById('enable-got-it');
         if (gotItButton) {
           gotItButton.addEventListener('click', () => {
-            // Show stats instead of hiding
-            const result = chrome.storage.local.get(['focusStats']);
-            result.then(data => {
-              this.showStats(data.focusStats || this.stats);
-            });
+            // Show stats immediately after enabling
+            this.showStats(initialStats);
           });
         }
       }, 100);
@@ -470,12 +501,65 @@ class FocusCompanion {
         timerDuration: useTimer ? 30 * 60 * 1000 : null // 30 minutes in milliseconds
       });
       
+      // Start updating stats in real-time
+      this.startStatsInterval();
+      
       // Show the companion
       this.show();
     } catch (error) {
       console.error('[Focus Companion] Error enabling task mode:', error);
       this.setExpression('sad');
       this.showMessage('Oops! Something went wrong. Please try again.');
+    }
+  }
+  
+  /**
+   * Get the current streak count
+   * @returns {Promise<number>} The current streak count
+   */
+  async getStreakCount() {
+    try {
+      const result = await chrome.storage.local.get(['lastActiveDate', 'streakCount']);
+      const today = new Date().toDateString();
+      
+      if (!result.lastActiveDate) {
+        // First time using the extension
+        await chrome.storage.local.set({ 
+          lastActiveDate: today,
+          streakCount: 1
+        });
+        return 1;
+      }
+
+      if (result.lastActiveDate === today) {
+        // Already active today, maintain current streak
+        return result.streakCount || 1;
+      }
+
+      // Check if last active date was yesterday
+      const lastActive = new Date(result.lastActiveDate);
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      if (lastActive.toDateString() === yesterday.toDateString()) {
+        // Increment streak
+        const newStreak = (result.streakCount || 0) + 1;
+        await chrome.storage.local.set({
+          lastActiveDate: today,
+          streakCount: newStreak
+        });
+        return newStreak;
+      }
+
+      // Streak broken, start new streak
+      await chrome.storage.local.set({
+        lastActiveDate: today,
+        streakCount: 1
+      });
+      return 1;
+    } catch (error) {
+      console.error('[Focus Companion] Error getting streak count:', error);
+      return 1;
     }
   }
   
@@ -809,29 +893,91 @@ class FocusCompanion {
         Hello! I'm your Focus Companion. I'll help you stay on track and be more productive.
       </div>
       <div class="bubble-actions">
+        <button class="action-button secondary" id="enable-job-search">Enable Job Search Mode</button>
         <button class="action-button primary" id="welcome-got-it">Got it!</button>
       </div>
     `;
     
-    // Add event listener to button
+    // Add event listeners to buttons
     setTimeout(() => {
-      // Use the shadow root to find the button
-      const button = this.shadowRoot ? 
-        this.shadowRoot.getElementById('welcome-got-it') : 
-        document.getElementById('welcome-got-it');
+      // Use the shadow root to find the buttons
+      const root = this.shadowRoot || document;
+      const gotItButton = root.getElementById('welcome-got-it');
+      const jobSearchButton = root.getElementById('enable-job-search');
         
-      if (button) {
+      if (gotItButton) {
         console.log('[Focus Companion] Welcome button found, adding event listener');
-        button.addEventListener('click', () => {
+        gotItButton.addEventListener('click', () => {
           this.hide();
         });
       } else {
         console.error('[Focus Companion] Welcome button not found');
       }
+
+      if (jobSearchButton) {
+        console.log('[Focus Companion] Job search button found, adding event listener');
+        jobSearchButton.addEventListener('click', () => {
+          this.showJobSearchOptions();
+        });
+      } else {
+        console.error('[Focus Companion] Job search button not found');
+      }
     }, 100);
     
     // Show the companion
     console.log('[Focus Companion] Calling show() method');
+    this.show();
+  }
+  
+  /**
+   * Show job search options
+   */
+  showJobSearchOptions() {
+    console.log('[Focus Companion] Showing job search options');
+    
+    // Update bubble content with timer options
+    this.bubble.innerHTML = `
+      <div class="bubble-header">
+        <span class="task-icon">${this.getTaskIcon('job_application')}</span>
+        <span class="task-name">Job Search Mode</span>
+      </div>
+      <div class="bubble-content">
+        Would you like to set a timer for your job search session?
+      </div>
+      <div class="bubble-actions">
+        <button class="action-button secondary" id="enable-timer">Enable for 30 min</button>
+        <button class="action-button primary" id="enable-no-timer">Continue without timer</button>
+      </div>
+    `;
+
+    // Add event listeners to buttons
+    setTimeout(() => {
+      const root = this.shadowRoot || document;
+      const timerButton = root.getElementById('enable-timer');
+      const noTimerButton = root.getElementById('enable-no-timer');
+
+      if (timerButton) {
+        timerButton.addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          this.enableTaskMode({
+            taskType: 'job_application',
+            confidence: 1.0
+          }, true); // With timer
+        });
+      }
+
+      if (noTimerButton) {
+        noTimerButton.addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          this.enableTaskMode({
+            taskType: 'job_application',
+            confidence: 1.0
+          }, false); // Without timer
+        });
+      }
+    }, 100);
+
+    // Show the companion
     this.show();
   }
   
@@ -971,23 +1117,51 @@ class FocusCompanion {
         const timeRemainingEl = this.shadowRoot.getElementById('focus-time-remaining');
         const meterFill = this.shadowRoot.querySelector('.focus-meter-fill');
 
-        if (focusScoreEl) focusScoreEl.textContent = stats.focusScore;
-        if (distractionCountEl) distractionCountEl.textContent = stats.distractionCount;
+        // Update focus score
+        if (focusScoreEl) {
+          focusScoreEl.textContent = Math.round(stats.focusScore);
+        }
+
+        // Update distraction count
+        if (distractionCountEl) {
+          distractionCountEl.textContent = stats.distractionCount;
+        }
         
         // Calculate and update active time
-        const activeTime = Math.floor((Date.now() - this.statsStartTime) / 60000);
-        if (activeTimeEl) activeTimeEl.textContent = `${activeTime}m`;
+        const now = Date.now();
+        const activeTimeMinutes = Math.floor((now - stats.startTime) / 60000);
+        if (activeTimeEl) {
+          activeTimeEl.textContent = `${activeTimeMinutes}m`;
+        }
 
         // Update focus meter
-        if (meterFill) meterFill.style.width = `${stats.focusScore}%`;
+        if (meterFill) {
+          meterFill.style.width = `${stats.focusScore}%`;
+        }
 
         // Update time remaining if timer is active
-        if (timeRemainingEl && prefs.focusModeEndTime) {
-          const remaining = Math.max(0, prefs.focusModeEndTime - Date.now());
-          const minutes = Math.floor(remaining / 60000);
-          const seconds = Math.floor((remaining % 60000) / 1000);
-          timeRemainingEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        if (timeRemainingEl && stats.endTime) {
+          const remaining = Math.max(0, stats.endTime - now);
+          if (remaining === 0) {
+            timeRemainingEl.textContent = 'Session Complete!';
+            // Session ended, stop the interval
+            this.stopStatsInterval();
+          } else {
+            const minutes = Math.floor(remaining / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+            timeRemainingEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+          }
+        } else if (timeRemainingEl) {
+          timeRemainingEl.textContent = 'No Timer Set';
         }
+
+        // Update storage with new active time
+        await chrome.storage.local.set({
+          focusStats: {
+            ...stats,
+            activeTime: activeTimeMinutes
+          }
+        });
       } catch (error) {
         console.error('[Focus Companion] Error updating stats:', error);
       }

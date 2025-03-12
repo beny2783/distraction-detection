@@ -697,6 +697,15 @@ function handleMessage(message, sender, sendResponse) {
     }
     
     sendResponse({ success: true });
+  } else if (message.type === 'distraction_detected') {
+    // Show distraction alert using Focus Companion
+    if (window._focusCompanionInstance) {
+      window._focusCompanionInstance.showDistractionAlert({
+        distractionType: 'entertainment',
+        confidence: 1.0
+      });
+    }
+    sendResponse({ success: true });
   }
 }
 
@@ -880,29 +889,31 @@ function formatTaskType(taskType) {
 }
 
 /**
- * Show a simple alert when job searching is detected (for testing purposes)
+ * Show a task detection alert using Focus Companion
  * @param {Object} taskData - Task detection data
  */
 function showTaskDetectionAlert(taskData) {
   console.log('Task detection alert:', taskData);
   
-  // Check if Focus Companion is already loaded
-  if (window._focusCompanionInstance) {
-    // Use the Focus Companion to show the task detection
+  // Always try to load Focus Companion if not already loaded
+  if (!window._focusCompanionInstance) {
+    loadFocusCompanion().then((focusCompanion) => {
+      focusCompanion.showTaskDetection(taskData);
+    }).catch(error => {
+      console.error('[Focus Nudge] Error loading Focus Companion:', error);
+      // Try loading again after a short delay
+      setTimeout(() => {
+        loadFocusCompanion().then((focusCompanion) => {
+          focusCompanion.showTaskDetection(taskData);
+        }).catch(error => {
+          console.error('[Focus Nudge] Failed to load Focus Companion after retry:', error);
+        });
+      }, 1000);
+    });
+  } else {
+    // Use existing Focus Companion instance
     window._focusCompanionInstance.showTaskDetection(taskData);
-    return;
   }
-  
-  // If Focus Companion is not loaded, load it
-  loadFocusCompanion().then((focusCompanion) => {
-    // Use the Focus Companion to show the task detection
-    focusCompanion.showTaskDetection(taskData);
-  }).catch(error => {
-    console.error('[Focus Nudge] Error loading Focus Companion:', error);
-    
-    // Fallback to simple alert if Focus Companion fails to load
-    showSimpleTaskAlert(taskData);
-  });
 }
 
 /**
@@ -974,59 +985,6 @@ function loadFocusCompanion() {
       reject(error);
     }
   });
-}
-
-/**
- * Show a simple alert when task detection fails to use Focus Companion
- * @param {Object} taskData - Task detection data
- */
-function showSimpleTaskAlert(taskData) {
-  // Create alert container
-  const alertContainer = document.createElement('div');
-  alertContainer.style.cssText = `
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #4CAF50;
-    color: white;
-    padding: 15px 20px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 10000;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  `;
-  
-  // Create icon
-  const icon = document.createElement('div');
-  icon.innerHTML = '🔍';
-  icon.style.fontSize = '20px';
-  
-  // Create message
-  const message = document.createElement('div');
-  message.innerHTML = `
-    <strong>Job Search Detected!</strong><br>
-    Confidence: ${Math.round(taskData.confidence * 100)}%<br>
-    Method: ${taskData.detectionMethod}
-  `;
-  
-  // Add elements to container
-  alertContainer.appendChild(icon);
-  alertContainer.appendChild(message);
-  
-  // Add to document
-  document.body.appendChild(alertContainer);
-  
-  // Remove after 5 seconds
-  setTimeout(() => {
-    if (document.body.contains(alertContainer)) {
-      document.body.removeChild(alertContainer);
-    }
-  }, 5000);
 }
 
 /**

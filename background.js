@@ -854,7 +854,29 @@ async function checkForDistractions(tabId, events, features) {
     // If in task mode and on a known distraction site, mark as distraction
     if (focusMode.active && knownDistractionDomains.some(d => features.domain.includes(d))) {
       console.log('[Focus Nudge] Known distraction domain detected:', features.domain);
-      chrome.runtime.sendMessage({ type: 'distraction_detected' });
+      
+      // Increment distraction count and update stats
+      focusMode.stats.distractionCount++;
+      
+      // Update focus score based on distractions
+      const result = await chrome.storage.local.get(['focusStats']);
+      const currentStats = result.focusStats || focusMode.stats;
+      currentStats.distractionCount = focusMode.stats.distractionCount;
+      
+      // Save updated stats
+      await chrome.storage.local.set({ focusStats: currentStats });
+      
+      // Send distraction detected message to content script
+      if (tabId) {
+        try {
+          await chrome.tabs.sendMessage(tabId, { 
+            type: 'distraction_detected',
+            domain: features.domain
+          });
+        } catch (error) {
+          console.error('[Focus Nudge] Error sending distraction alert:', error);
+        }
+      }
       
       // Generate and send nudge
       const nudge = generateNudge(features.domain, { probability: 1.0, confidence: 1.0 });
@@ -1166,7 +1188,7 @@ async function detectCurrentTask() {
       // Save session data
       await chrome.storage.local.set({ sessionData });
       
-      // For testing: Send a direct notification to the content script for job search detection
+      // Send a notification to the content script for job search detection
       if (taskDetection.taskType === TASK_TYPES.JOB_SEARCH && taskDetection.confidence >= 0.5) {
         try {
           await chrome.tabs.sendMessage(activeTabId, {
@@ -1183,26 +1205,6 @@ async function detectCurrentTask() {
         } catch (error) {
           console.error('Focus Nudge: Error sending task detection alert:', error);
         }
-      }
-    }
-    
-    // Always send a notification for job search detection during manual testing,
-    // even if the task hasn't changed
-    if (taskDetection.taskType === TASK_TYPES.JOB_SEARCH && taskDetection.confidence >= 0.5) {
-      try {
-        await chrome.tabs.sendMessage(activeTabId, {
-          type: 'TASK_DETECTED',
-          taskType: taskDetection.taskType,
-          confidence: taskDetection.confidence,
-          detectionMethod: taskDetection.detectionMethod,
-          evidence: taskDetection.evidence
-        });
-        
-        if (CONFIG.debugMode) {
-          console.log('Focus Nudge: Sent job search detection alert to content script');
-        }
-      } catch (error) {
-        console.error('Focus Nudge: Error sending task detection alert:', error);
       }
     }
   } catch (error) {
